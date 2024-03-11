@@ -31,23 +31,27 @@ var BdvEngine;
         }
         loop() {
             BdvEngine.gl.clear(BdvEngine.gl.COLOR_BUFFER_BIT);
-            BdvEngine.gl.bindBuffer(BdvEngine.gl.ARRAY_BUFFER, this.buffer);
-            BdvEngine.gl.vertexAttribPointer(0, 3, BdvEngine.gl.FLOAT, false, 0, 0);
-            BdvEngine.gl.enableVertexAttribArray(0);
-            BdvEngine.gl.drawArrays(BdvEngine.gl.TRIANGLES, 0, 3);
+            let colorPosition = this.shader.getUniformLocation("u_color");
+            BdvEngine.gl.uniform4f(colorPosition, 1, 0.5, 0, 1);
+            this.buffer.bind();
+            this.buffer.draw();
             requestAnimationFrame(this.loop.bind(this));
         }
         createBuffer() {
-            this.buffer = BdvEngine.gl.createBuffer();
+            this.buffer = new BdvEngine.glBuffer(3);
+            let positionAttr = new BdvEngine.glAttrInfo();
+            positionAttr.location = this.shader.getAttribLocation("a_pos");
+            positionAttr.offset = 0;
+            positionAttr.size = 3;
+            this.buffer.addAttrLocation(positionAttr);
             let vertices = [
                 0, 0, 0,
                 0, 0.5, 0,
                 0.5, 0.5, 0
             ];
-            BdvEngine.gl.bindBuffer(BdvEngine.gl.ARRAY_BUFFER, this.buffer);
-            BdvEngine.gl.bufferData(BdvEngine.gl.ARRAY_BUFFER, new Float32Array(vertices), BdvEngine.gl.STATIC_DRAW);
-            BdvEngine.gl.bindBuffer(BdvEngine.gl.ARRAY_BUFFER, undefined);
-            BdvEngine.gl.disableVertexAttribArray(0);
+            this.buffer.pushBack(vertices);
+            this.buffer.upload();
+            this.buffer.unbind();
         }
         loadShaders() {
             let vertexSource = `
@@ -58,8 +62,9 @@ var BdvEngine;
             `;
             let fragmentSource = `
                 precision mediump float;
+                uniform vec4 u_color;
                 void main() {
-                    gl_FragColor = vec4(1.0);
+                    gl_FragColor = u_color;
                 }
             `;
             this.shader = new BdvEngine.Shader("primitiveShader", vertexSource, fragmentSource);
@@ -80,18 +85,146 @@ var BdvEngine;
 })(BdvEngine || (BdvEngine = {}));
 var BdvEngine;
 (function (BdvEngine) {
+    class glAttrInfo {
+    }
+    BdvEngine.glAttrInfo = glAttrInfo;
+    class glBuffer {
+        constructor(elementSize, dataType = BdvEngine.gl.FLOAT, targetBufferType = BdvEngine.gl.ARRAY_BUFFER, mode = BdvEngine.gl.TRIANGLES) {
+            this.hasAttrLocation = false;
+            this.data = [];
+            this.attrInfo = [];
+            this.elementSize = elementSize;
+            this.type = dataType;
+            this.targetBufferType = targetBufferType;
+            this.mode = mode;
+            switch (this.type) {
+                case BdvEngine.gl.UNSIGNED_INT:
+                case BdvEngine.gl.INT:
+                case BdvEngine.gl.FLOAT: {
+                    this.typeSize = 4;
+                    break;
+                }
+                case BdvEngine.gl.UNSIGNED_SHORT:
+                case BdvEngine.gl.SHORT: {
+                    this.typeSize = 2;
+                    break;
+                }
+                case BdvEngine.gl.UNSIGNED_BYTE:
+                case BdvEngine.gl.BYTE: {
+                    this.typeSize = 1;
+                    break;
+                }
+                default: {
+                    throw new Error(`Unable to determine byte size for type ${this.type}.`);
+                }
+            }
+            this.stride = this.elementSize * this.typeSize;
+            this.buffer = BdvEngine.gl.createBuffer();
+        }
+        destroy() {
+            BdvEngine.gl.deleteBuffer(this.buffer);
+        }
+        bind(normalized = false) {
+            BdvEngine.gl.bindBuffer(this.targetBufferType, this.buffer);
+            if (this.hasAttrLocation) {
+                for (let attr of this.attrInfo) {
+                    BdvEngine.gl.vertexAttribPointer(attr.location, attr.size, this.type, normalized, this.stride, attr.offset * this.typeSize);
+                    BdvEngine.gl.enableVertexAttribArray(attr.location);
+                }
+            }
+        }
+        unbind() {
+            for (let attr of this.attrInfo) {
+                BdvEngine.gl.disableVertexAttribArray(attr.location);
+            }
+            BdvEngine.gl.bindBuffer(BdvEngine.gl.ARRAY_BUFFER, this.buffer);
+        }
+        addAttrLocation(info) {
+            this.hasAttrLocation = true;
+            this.attrInfo.push(info);
+        }
+        pushBack(data) {
+            for (let each of data) {
+                this.data.push(each);
+            }
+        }
+        upload() {
+            BdvEngine.gl.bindBuffer(this.targetBufferType, this.buffer);
+            let bufferData;
+            switch (this.type) {
+                case BdvEngine.gl.FLOAT: {
+                    bufferData = new Float32Array(this.data);
+                    break;
+                }
+                case BdvEngine.gl.INT: {
+                    bufferData = new Int32Array(this.data);
+                    break;
+                }
+                case BdvEngine.gl.UNSIGNED_INT: {
+                    bufferData = new Uint32Array(this.data);
+                    break;
+                }
+                case BdvEngine.gl.SHORT: {
+                    bufferData = new Int16Array(this.data);
+                    break;
+                }
+                case BdvEngine.gl.UNSIGNED_SHORT: {
+                    bufferData = new Uint16Array(this.data);
+                    break;
+                }
+                case BdvEngine.gl.BYTE: {
+                    bufferData = new Int8Array(this.data);
+                    break;
+                }
+                case BdvEngine.gl.UNSIGNED_BYTE: {
+                    bufferData = new Uint8Array(this.data);
+                    break;
+                }
+                default: {
+                    throw new Error(`Unable to determine byte size for type ${this.type}.`);
+                }
+            }
+            BdvEngine.gl.bufferData(this.targetBufferType, bufferData, BdvEngine.gl.STATIC_DRAW);
+        }
+        draw() {
+            if (this.targetBufferType === BdvEngine.gl.ARRAY_BUFFER) {
+                BdvEngine.gl.drawArrays(this.mode, 0, this.data.length / this.elementSize);
+            }
+            else if (this.targetBufferType === BdvEngine.gl.ELEMENT_ARRAY_BUFFER) {
+                BdvEngine.gl.drawElements(this.mode, this.data.length, this.type, 0);
+            }
+        }
+    }
+    BdvEngine.glBuffer = glBuffer;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
     class Shader {
         constructor(name, vertexSource, fragmentSource) {
+            this.attributes = {};
+            this.uniforms = {};
             this.shaderName = name;
             let vertexShader = this.loadShader(vertexSource, BdvEngine.gl.VERTEX_SHADER);
             let fragmentShader = this.loadShader(fragmentSource, BdvEngine.gl.FRAGMENT_SHADER);
             this.createProgram(vertexShader, fragmentShader);
+            this.getAttributes();
+            this.getUniforms();
         }
         get name() {
             return this.shaderName;
         }
         use() {
             BdvEngine.gl.useProgram(this.program);
+        }
+        getAttribLocation(name) {
+            if (this.attributes[name] === null || this.attributes[name] === undefined)
+                throw new Error(`Unable to fetch attr with name ${name} in shader ${this.shaderName}.`);
+            return this.attributes[name];
+        }
+        getUniformLocation(name) {
+            if (this.uniforms[name] === null || this.uniforms[name] === undefined)
+                throw new Error(`Unable to fetch uniform with name ${name} in shader ${this.shaderName}.`);
+            return this.uniforms[name];
         }
         loadShader(source, shaderType) {
             let shader = BdvEngine.gl.createShader(shaderType);
@@ -111,6 +244,24 @@ var BdvEngine;
             let error = BdvEngine.gl.getProgramInfoLog(this.program);
             if (error !== '') {
                 throw new Error(`Error linking shader with name ${this.shaderName}: ${error}`);
+            }
+        }
+        getAttributes() {
+            let attrCount = BdvEngine.gl.getProgramParameter(this.program, BdvEngine.gl.ACTIVE_ATTRIBUTES);
+            for (let i = 0; i < attrCount; i++) {
+                let attrInfo = BdvEngine.gl.getActiveAttrib(this.program, i);
+                if (!attrInfo)
+                    break;
+                this.attributes[attrInfo.name] = BdvEngine.gl.getAttribLocation(this.program, attrInfo.name);
+            }
+        }
+        getUniforms() {
+            let uniformCount = BdvEngine.gl.getProgramParameter(this.program, BdvEngine.gl.ACTIVE_UNIFORMS);
+            for (let i = 0; i < uniformCount; i++) {
+                let uniformInfo = BdvEngine.gl.getActiveUniform(this.program, i);
+                if (!uniformInfo)
+                    break;
+                this.uniforms[uniformInfo.name] = BdvEngine.gl.getUniformLocation(this.program, uniformInfo.name);
             }
         }
     }

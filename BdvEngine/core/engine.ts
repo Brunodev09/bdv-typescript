@@ -5,7 +5,7 @@ namespace BdvEngine {
 
         private canvas: HTMLCanvasElement;
         private shader: Shader;
-        private buffer: WebGLBuffer;
+        private buffer: glBuffer;
 
         public constructor(canvas: HTMLCanvasElement) {
             this.canvas = canvas;
@@ -35,16 +35,25 @@ namespace BdvEngine {
         private loop(): void {
             
             gl.clear(gl.COLOR_BUFFER_BIT);
-            gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
-            gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-            gl.enableVertexAttribArray(0);
-            gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+            let colorPosition = this.shader.getUniformLocation("u_color");
+            gl.uniform4f(colorPosition, 1, 0.5, 0, 1);
+
+            this.buffer.bind();
+            this.buffer.draw();
 
             requestAnimationFrame(this.loop.bind(this));
         }
 
         private createBuffer(): void {
-            this.buffer = gl.createBuffer();
+            this.buffer = new glBuffer(3);
+
+            let positionAttr = new glAttrInfo();
+            positionAttr.location = this.shader.getAttribLocation("a_pos");
+            positionAttr.offset = 0;
+            positionAttr.size = 3;
+
+            this.buffer.addAttrLocation(positionAttr);
             
             let vertices = [
                 0, 0, 0,
@@ -52,11 +61,9 @@ namespace BdvEngine {
                 0.5, 0.5, 0
             ];
 
-            gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
-            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
-          
-            gl.bindBuffer(gl.ARRAY_BUFFER, undefined);
-            gl.disableVertexAttribArray(0);
+            this.buffer.pushBack(vertices);
+            this.buffer.upload();
+            this.buffer.unbind();
         }
 
         private loadShaders(): void {
@@ -68,8 +75,9 @@ namespace BdvEngine {
             `;
             let fragmentSource = `
                 precision mediump float;
+                uniform vec4 u_color;
                 void main() {
-                    gl_FragColor = vec4(1.0);
+                    gl_FragColor = u_color;
                 }
             `;
 
