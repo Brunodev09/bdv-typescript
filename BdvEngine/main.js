@@ -20,49 +20,43 @@ var BdvEngine;
             BdvEngine.gl.clearColor(0, 0, 0, 1);
             this.loadShaders();
             this.shader.use();
-            this.createBuffer();
+            this.projectionMatrix = BdvEngine.m4x4.ortho(0, this.canvas.width, 0, this.canvas.height, -100.0, 100.0);
+            this.sprite = new BdvEngine.Sprite('test');
+            this.sprite.load();
+            this.sprite.position.vx = 200;
             this.resize();
             this.loop();
         }
         resize() {
             this.canvas.width = window.innerWidth;
             this.canvas.height = window.innerHeight;
-            BdvEngine.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+            BdvEngine.gl.viewport(-1, 1, -1, 1);
         }
         loop() {
             BdvEngine.gl.clear(BdvEngine.gl.COLOR_BUFFER_BIT);
             let colorPosition = this.shader.getUniformLocation("u_color");
-            BdvEngine.gl.uniform4f(colorPosition, 1, 0.5, 0, 1);
-            this.buffer.bind();
-            this.buffer.draw();
+            BdvEngine.gl.uniform4f(colorPosition, 0, 1, 0, 1);
+            let projectionPosition = this.shader.getUniformLocation("u_proj");
+            BdvEngine.gl.uniformMatrix4fv(projectionPosition, false, new Float32Array(this.projectionMatrix.mData));
+            let transformLocation = this.shader.getUniformLocation("u_transf");
+            BdvEngine.gl.uniformMatrix4fv(transformLocation, false, new Float32Array(BdvEngine.m4x4.translation(this.sprite.position).mData));
+            this.sprite.render();
             requestAnimationFrame(this.loop.bind(this));
-        }
-        createBuffer() {
-            this.buffer = new BdvEngine.glBuffer(3);
-            let positionAttr = new BdvEngine.glAttrInfo();
-            positionAttr.location = this.shader.getAttribLocation("a_pos");
-            positionAttr.offset = 0;
-            positionAttr.size = 3;
-            this.buffer.addAttrLocation(positionAttr);
-            let vertices = [
-                0, 0, 0,
-                0, 0.5, 0,
-                0.5, 0.5, 0
-            ];
-            this.buffer.pushBack(vertices);
-            this.buffer.upload();
-            this.buffer.unbind();
         }
         loadShaders() {
             let vertexSource = `
                 attribute vec3 a_pos;
+                uniform mat4 u_proj;
+                uniform mat4 u_transf;
+
                 void main() {
-                    gl_Position = vec4(a_pos, 1.0);
+                    gl_Position = u_proj * u_transf * vec4(a_pos, 1.0);
                 }
             `;
             let fragmentSource = `
                 precision mediump float;
                 uniform vec4 u_color;
+
                 void main() {
                     gl_FragColor = u_color;
                 }
@@ -266,5 +260,118 @@ var BdvEngine;
         }
     }
     BdvEngine.Shader = Shader;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class Sprite {
+        constructor(name, width = 100, height = 100) {
+            this.position = new BdvEngine.vec3();
+            this.name = name;
+            this.width = width;
+            this.height = height;
+        }
+        load() {
+            this.buffer = new BdvEngine.glBuffer(3);
+            let positionAttr = new BdvEngine.glAttrInfo();
+            positionAttr.location = 0;
+            positionAttr.offset = 0;
+            positionAttr.size = 3;
+            this.buffer.addAttrLocation(positionAttr);
+            let vertices = [
+                0, 0, 0,
+                0, this.height, 0,
+                this.width, this.height, 0,
+                this.width, this.height, 0,
+                this.width, 0, 0,
+                0, 0, 0
+            ];
+            this.buffer.pushBack(vertices);
+            this.buffer.upload();
+            this.buffer.unbind();
+        }
+        update(tick) {
+        }
+        render() {
+            this.buffer.bind();
+            this.buffer.draw();
+        }
+    }
+    BdvEngine.Sprite = Sprite;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class m4x4 {
+        constructor() {
+            this.data = [];
+            this.data = [
+                1, 0, 0, 0,
+                0, 1, 0, 0,
+                0, 0, 1, 0,
+                0, 0, 0, 1
+            ];
+        }
+        get mData() {
+            return this.data;
+        }
+        static identity() {
+            return new m4x4();
+        }
+        static ortho(left, right, bottom, top, zNear, zFar) {
+            let m = new m4x4();
+            let lr = 1.0 / (left - right);
+            let bt = 1.0 / (bottom - top);
+            let nf = 1.0 / (zNear - zFar);
+            m.data[0] = -2.0 * lr;
+            m.data[5] = -2.0 * bt;
+            m.data[10] = 2.0 * nf;
+            m.data[12] = (left + right) * lr;
+            m.data[13] = (top + bottom) * bt;
+            m.data[14] = (zFar + zNear) * nf;
+            return m;
+        }
+        static translation(position) {
+            let m = new m4x4();
+            m.data[12] = position.vx;
+            m.data[13] = position.vy;
+            m.data[14] = position.vz;
+            return m;
+        }
+    }
+    BdvEngine.m4x4 = m4x4;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class vec3 {
+        constructor(x = 0, y = 0, z = 0) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+        get vx() {
+            return this.x;
+        }
+        set vx(point) {
+            this.x = point;
+        }
+        get vy() {
+            return this.y;
+        }
+        set vy(point) {
+            this.y = point;
+        }
+        get vz() {
+            return this.z;
+        }
+        set vz(point) {
+            this.z = point;
+        }
+        toArray() {
+            return [this.x, this.y, this.z];
+        }
+        toFloat32() {
+            return new Float32Array(this.toArray());
+        }
+    }
+    BdvEngine.vec3 = vec3;
 })(BdvEngine || (BdvEngine = {}));
 //# sourceMappingURL=main.js.map
