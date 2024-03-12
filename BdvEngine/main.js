@@ -68,6 +68,173 @@ var BdvEngine;
 })(BdvEngine || (BdvEngine = {}));
 var BdvEngine;
 (function (BdvEngine) {
+    BdvEngine.MESSAGE_ASSET_LOADER_LOADED = "MESSAGE_ASSET_LOADER_LOADED";
+    class AssetManager {
+        constructor() { }
+        static init() {
+            AssetManager.loaders.push(new BdvEngine.ImageLoader());
+        }
+        static register(loader) {
+            AssetManager.loaders.push(loader);
+        }
+        static onLoaded(asset) {
+            AssetManager.assetsPool[asset.name] = asset;
+            BdvEngine.Message.send(`${BdvEngine.MESSAGE_ASSET_LOADER_LOADED}::${asset.name}`, this, asset);
+        }
+        static loadAsset(assetName) {
+            let ext = assetName.split(".").pop().toLowerCase();
+            for (let loader of AssetManager.loaders) {
+                if (loader.fileExt.indexOf(ext) !== -1) {
+                    loader.loadAsset(assetName);
+                    return;
+                }
+            }
+            console.log(`AssetManager::Unable to load asset with the defined extesion ${ext}.`);
+        }
+        static isLoaded(assetName) {
+            return !!AssetManager.assetsPool[assetName];
+        }
+        static get(assetName) {
+            if (AssetManager.assetsPool[assetName]) {
+                return AssetManager.assetsPool[assetName];
+            }
+            else
+                AssetManager.loadAsset(assetName);
+            return undefined;
+        }
+    }
+    AssetManager.loaders = [];
+    BdvEngine.AssetManager = AssetManager;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class ImageAsset {
+        constructor(name, data) {
+            this.name = name;
+            this.data = data;
+        }
+        get width() {
+            return this.data.width;
+        }
+        get height() {
+            return this.data.height;
+        }
+    }
+    BdvEngine.ImageAsset = ImageAsset;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class ImageLoader {
+        get fileExt() {
+            return ["png", "gif", "jpg"];
+        }
+        loadAsset(assetName) {
+            let img = new Image();
+            img.onload = this.onLoaded.bind(this, assetName, img);
+            img.src = assetName;
+        }
+        onLoaded(assetName, image) {
+            console.log(`ImageLoader::onLoaded: assetName/image ${assetName}/${image}`);
+            let asset = new BdvEngine.ImageAsset(assetName, image);
+            BdvEngine.AssetManager.onLoaded(asset);
+        }
+    }
+    BdvEngine.ImageLoader = ImageLoader;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    let MessagePriority;
+    (function (MessagePriority) {
+        MessagePriority[MessagePriority["DEFAULT"] = 0] = "DEFAULT";
+        MessagePriority[MessagePriority["CRITICAL"] = 1] = "CRITICAL";
+    })(MessagePriority = BdvEngine.MessagePriority || (BdvEngine.MessagePriority = {}));
+    class Message {
+        constructor(code, sender, context, priority = MessagePriority.DEFAULT) {
+            this.code = code;
+            this.sender = sender;
+            this.context = context;
+            this.priority = priority;
+        }
+        static send(code, sender, context) {
+            BdvEngine.MessageBus.emit(new Message(code, sender, context, MessagePriority.DEFAULT));
+        }
+        static sendCritical(code, sender, context) {
+            BdvEngine.MessageBus.emit(new Message(code, sender, context, MessagePriority.CRITICAL));
+        }
+        static subscribe(code, handler) {
+            BdvEngine.MessageBus.subscribe(code, handler);
+        }
+        static unsubscribe(code, handler) {
+            BdvEngine.MessageBus.unsubscribe(code, handler);
+        }
+    }
+    BdvEngine.Message = Message;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class MessageBus {
+        constructor() { }
+        static subscribe(code, handler) {
+            if (!MessageBus.subs[code]) {
+                MessageBus.subs[code] = [];
+            }
+            if (MessageBus.subs[code].indexOf(handler) !== -1) {
+                console.log(`MessageBus::Attempting to push duplicate handler to messaging code ${code}. No subscription added.`);
+            }
+            else {
+                MessageBus.subs[code].push(handler);
+            }
+        }
+        static unsubscribe(code, handler) {
+            if (!MessageBus.subs[code]) {
+                console.log(`MessageBus::There is no such handler subscribed to code ${code}.`);
+                return;
+            }
+            if (MessageBus.subs[code].indexOf(handler) !== -1) {
+                MessageBus.subs[code].splice(MessageBus.subs[code].indexOf(handler), 1);
+            }
+        }
+        static emit(message) {
+            console.log(`MessageBus::Message Emitted: ${JSON.stringify(message)}`);
+            let handlers = MessageBus.subs[message.code];
+            if (!handlers)
+                return;
+            for (let handler of handlers) {
+                if (message.priority === BdvEngine.MessagePriority.CRITICAL) {
+                    handler.onMessage(message);
+                }
+                else {
+                    MessageBus.messageQueue.push(new BdvEngine.SubscriptionNode(message, handler));
+                }
+            }
+        }
+        static update(time) {
+            if (!MessageBus.messageQueue.length)
+                return;
+            let limit = Math.min(MessageBus.queueMessageTick, MessageBus.messageQueue.length);
+            for (let i = 0; i < limit; i++) {
+                let node = MessageBus.messageQueue.shift();
+                node.handler.onMessage(node.message);
+            }
+        }
+    }
+    MessageBus.subs = {};
+    MessageBus.queueMessageTick = 10;
+    MessageBus.messageQueue = [];
+    BdvEngine.MessageBus = MessageBus;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class SubscriptionNode {
+        constructor(message, handler) {
+            this.message = message;
+            this.handler = handler;
+        }
+    }
+    BdvEngine.SubscriptionNode = SubscriptionNode;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
     class GLUTools {
         static init(canvas) {
             BdvEngine.gl = canvas.getContext("webgl");

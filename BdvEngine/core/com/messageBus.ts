@@ -10,7 +10,7 @@ namespace BdvEngine {
         private constructor() { }
 
         public static subscribe(code: string, handler: IMessageHandler): void {
-            if (MessageBus.subs[code]) {
+            if (!MessageBus.subs[code]) {
                 MessageBus.subs[code] = [];
             }
             if (MessageBus.subs[code].indexOf(handler) !== -1) {
