@@ -5,7 +5,7 @@ namespace BdvEngine {
     export class AssetManager {
 
         private static loaders: IAssetLoader[] = [];
-        private static assetsPool: {[name: string]: IAsset};
+        private static assetsPool: {[name: string]: IAsset} = {};
 
         private constructor() { }
 
@@ -38,7 +38,7 @@ namespace BdvEngine {
         }
 
         public static get(assetName: string): IAsset {
-            if (AssetManager.assetsPool[assetName]) {
+            if (AssetManager.assetsPool[assetName] !== undefined) {
                 return AssetManager.assetsPool[assetName];
             } else AssetManager.loadAsset(assetName);
 

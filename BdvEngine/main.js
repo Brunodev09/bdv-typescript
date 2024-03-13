@@ -17,11 +17,12 @@ var BdvEngine;
         }
         start() {
             BdvEngine.GLUTools.init(this.canvas);
+            BdvEngine.AssetManager.init();
             BdvEngine.gl.clearColor(0, 0, 0, 1);
             this.loadShaders();
             this.shader.use();
             this.projectionMatrix = BdvEngine.m4x4.ortho(0, this.canvas.width, 0, this.canvas.height, -100.0, 100.0);
-            this.sprite = new BdvEngine.Sprite('test');
+            this.sprite = new BdvEngine.Sprite("block", "assets/block.png");
             this.sprite.load();
             this.sprite.position.vx = 200;
             this.resize();
@@ -33,32 +34,41 @@ var BdvEngine;
             BdvEngine.gl.viewport(-1, 1, -1, 1);
         }
         loop() {
+            BdvEngine.MessageBus.update(0);
             BdvEngine.gl.clear(BdvEngine.gl.COLOR_BUFFER_BIT);
             let colorPosition = this.shader.getUniformLocation("u_color");
-            BdvEngine.gl.uniform4f(colorPosition, 0, 1, 0, 1);
+            BdvEngine.gl.uniform4f(colorPosition, 1, 1, 1, 1);
             let projectionPosition = this.shader.getUniformLocation("u_proj");
             BdvEngine.gl.uniformMatrix4fv(projectionPosition, false, new Float32Array(this.projectionMatrix.mData));
             let transformLocation = this.shader.getUniformLocation("u_transf");
             BdvEngine.gl.uniformMatrix4fv(transformLocation, false, new Float32Array(BdvEngine.m4x4.translation(this.sprite.position).mData));
-            this.sprite.render();
+            this.sprite.render(this.shader);
             requestAnimationFrame(this.loop.bind(this));
         }
         loadShaders() {
             let vertexSource = `
                 attribute vec3 a_pos;
+                attribute vec2 a_textCoord;
+
                 uniform mat4 u_proj;
                 uniform mat4 u_transf;
 
+                varying vec2 v_textCoord;
+
                 void main() {
                     gl_Position = u_proj * u_transf * vec4(a_pos, 1.0);
+                    v_textCoord = a_textCoord;
                 }
             `;
             let fragmentSource = `
                 precision mediump float;
                 uniform vec4 u_color;
+                uniform sampler2D u_diffuse;
+
+                varying vec2 v_textCoord;
 
                 void main() {
-                    gl_FragColor = u_color;
+                    gl_FragColor = u_color * texture2D(u_diffuse, v_textCoord);
                 }
             `;
             this.shader = new BdvEngine.Shader("primitiveShader", vertexSource, fragmentSource);
@@ -95,7 +105,7 @@ var BdvEngine;
             return !!AssetManager.assetsPool[assetName];
         }
         static get(assetName) {
-            if (AssetManager.assetsPool[assetName]) {
+            if (AssetManager.assetsPool[assetName] !== undefined) {
                 return AssetManager.assetsPool[assetName];
             }
             else
@@ -104,6 +114,7 @@ var BdvEngine;
         }
     }
     AssetManager.loaders = [];
+    AssetManager.assetsPool = {};
     BdvEngine.AssetManager = AssetManager;
 })(BdvEngine || (BdvEngine = {}));
 var BdvEngine;
@@ -431,26 +442,40 @@ var BdvEngine;
 var BdvEngine;
 (function (BdvEngine) {
     class Sprite {
-        constructor(name, width = 100, height = 100) {
+        constructor(name, textureName, width = 100, height = 100) {
             this.position = new BdvEngine.vec3();
             this.name = name;
             this.width = width;
             this.height = height;
+            this.textureName = textureName;
+            this.texture = BdvEngine.TextureManager.getTexture(textureName);
+        }
+        destructor() {
+            this.buffer.destroy();
+            BdvEngine.TextureManager.flushTexture(this.textureName);
+        }
+        get getName() {
+            return this.name;
         }
         load() {
-            this.buffer = new BdvEngine.glBuffer(3);
+            this.buffer = new BdvEngine.glBuffer(5);
             let positionAttr = new BdvEngine.glAttrInfo();
             positionAttr.location = 0;
             positionAttr.offset = 0;
             positionAttr.size = 3;
             this.buffer.addAttrLocation(positionAttr);
+            let textCoordAttr = new BdvEngine.glAttrInfo();
+            textCoordAttr.location = 1;
+            textCoordAttr.offset = 3;
+            textCoordAttr.size = 2;
+            this.buffer.addAttrLocation(textCoordAttr);
             let vertices = [
-                0, 0, 0,
-                0, this.height, 0,
-                this.width, this.height, 0,
-                this.width, this.height, 0,
-                this.width, 0, 0,
-                0, 0, 0
+                0, 0, 0, 0, 0,
+                0, this.height, 0, 0, 1.0,
+                this.width, this.height, 0, 1.0, 1.0,
+                this.width, this.height, 0, 1.0, 1.0,
+                this.width, 0, 0, 1.0, 0,
+                0, 0, 0, 0, 0
             ];
             this.buffer.pushBack(vertices);
             this.buffer.upload();
@@ -458,12 +483,131 @@ var BdvEngine;
         }
         update(tick) {
         }
-        render() {
+        render(shader) {
+            this.texture.activate(0);
+            let diffuseLocation = shader.getUniformLocation("u_diffuse");
+            BdvEngine.gl.uniform1i(diffuseLocation, 0);
             this.buffer.bind();
             this.buffer.draw();
         }
     }
     BdvEngine.Sprite = Sprite;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    const LEVEL = 0;
+    const BORDER = 0;
+    const TEMP_IMAGE_DATA = new Uint8Array([255, 255, 255, 255]);
+    class Texture {
+        constructor(name, width = 1, height = 1) {
+            this.isLoaded = false;
+            this.name = name;
+            this.width = width;
+            this.height = height;
+            this.handle = BdvEngine.gl.createTexture();
+            BdvEngine.Message.subscribe(`${BdvEngine.MESSAGE_ASSET_LOADER_LOADED}::${this.name}`, this);
+            this.bind();
+            BdvEngine.gl.pixelStorei(BdvEngine.gl.UNPACK_ALIGNMENT, 1);
+            BdvEngine.gl.texImage2D(BdvEngine.gl.TEXTURE_2D, LEVEL, BdvEngine.gl.RGBA, 1, 1, BORDER, BdvEngine.gl.RGBA, BdvEngine.gl.UNSIGNED_BYTE, TEMP_IMAGE_DATA);
+            let asset = BdvEngine.AssetManager.get(this.name);
+            if (asset) {
+                this.loadTexture(asset);
+            }
+        }
+        destructor() {
+            BdvEngine.gl.deleteTexture(this.handle);
+        }
+        get textureName() {
+            return this.name;
+        }
+        get textureWidth() {
+            return this.width;
+        }
+        get textureHeight() {
+            return this.height;
+        }
+        get textureIsLoaded() {
+            return this.isLoaded;
+        }
+        activate(textureUnit = 0) {
+            BdvEngine.gl.activeTexture(BdvEngine.gl.TEXTURE0 + textureUnit);
+            this.bind();
+        }
+        bind() {
+            BdvEngine.gl.bindTexture(BdvEngine.gl.TEXTURE_2D, this.handle);
+        }
+        unbind() {
+            BdvEngine.gl.bindTexture(BdvEngine.gl.TEXTURE_2D, undefined);
+        }
+        onMessage(message) {
+            if (message.code === `${BdvEngine.MESSAGE_ASSET_LOADER_LOADED}::${this.name}`) {
+                this.loadTexture(message.context);
+            }
+        }
+        loadTexture(asset) {
+            this.width = asset.width;
+            this.height = asset.height;
+            this.bind();
+            BdvEngine.gl.texImage2D(BdvEngine.gl.TEXTURE_2D, LEVEL, BdvEngine.gl.RGBA, BdvEngine.gl.RGBA, BdvEngine.gl.UNSIGNED_BYTE, asset.data);
+            if (this.isPow2()) {
+                BdvEngine.gl.generateMipmap(BdvEngine.gl.TEXTURE_2D);
+            }
+            else {
+                BdvEngine.gl.texParameteri(BdvEngine.gl.TEXTURE_2D, BdvEngine.gl.TEXTURE_WRAP_S, BdvEngine.gl.CLAMP_TO_EDGE);
+                BdvEngine.gl.texParameteri(BdvEngine.gl.TEXTURE_2D, BdvEngine.gl.TEXTURE_WRAP_T, BdvEngine.gl.CLAMP_TO_EDGE);
+                BdvEngine.gl.texParameteri(BdvEngine.gl.TEXTURE_2D, BdvEngine.gl.TEXTURE_MIN_FILTER, BdvEngine.gl.LINEAR);
+            }
+            this.isLoaded = true;
+        }
+        isPow2() {
+            return (this.isValPow2(this.width) && this.isValPow2(this.height));
+        }
+        isValPow2(value) {
+            return (value & (value - 1)) == 0;
+        }
+    }
+    BdvEngine.Texture = Texture;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class TextureManager {
+        constructor() { }
+        static getTexture(name) {
+            if (!TextureManager.textures[name]) {
+                let texture = new BdvEngine.Texture(name);
+                TextureManager.textures[name] = new BdvEngine.TextureNode(texture);
+            }
+            else {
+                TextureManager.textures[name].count++;
+            }
+            return TextureManager.textures[name].texture;
+        }
+        static flushTexture(name) {
+            if (!TextureManager.textures[name]) {
+                console.log(`TextureManager::Texture ${name} does not exists and cannot be flushed.`);
+            }
+            else {
+                TextureManager.textures[name].count--;
+                if (TextureManager.textures[name].count < 1) {
+                    TextureManager.textures[name].texture.destructor();
+                    TextureManager.textures[name] = undefined;
+                    delete TextureManager.textures[name];
+                }
+            }
+        }
+    }
+    TextureManager.textures = {};
+    BdvEngine.TextureManager = TextureManager;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class TextureNode {
+        constructor(texture) {
+            this.count = 1;
+            this.texture = texture;
+        }
+    }
+    BdvEngine.TextureNode = TextureNode;
 })(BdvEngine || (BdvEngine = {}));
 var BdvEngine;
 (function (BdvEngine) {
@@ -505,6 +649,34 @@ var BdvEngine;
         }
     }
     BdvEngine.m4x4 = m4x4;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class vec2 {
+        constructor(x = 0, y = 0) {
+            this.x = x;
+            this.y = y;
+        }
+        get vx() {
+            return this.x;
+        }
+        set vx(point) {
+            this.x = point;
+        }
+        get vy() {
+            return this.y;
+        }
+        set vy(point) {
+            this.y = point;
+        }
+        toArray() {
+            return [this.x, this.y];
+        }
+        toFloat32() {
+            return new Float32Array(this.toArray());
+        }
+    }
+    BdvEngine.vec2 = vec2;
 })(BdvEngine || (BdvEngine = {}));
 var BdvEngine;
 (function (BdvEngine) {
