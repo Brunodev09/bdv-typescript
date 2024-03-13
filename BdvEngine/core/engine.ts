@@ -25,7 +25,7 @@ namespace BdvEngine {
 
             this.projectionMatrix = m4x4.ortho(0, this.canvas.width, 0, this.canvas.height, -100.0, 100.0);
 
-            this.sprite = new Sprite("block", "assets/block.png");
+            this.sprite = new Sprite("block", "assets/block.png", 16, 16);
             this.sprite.load();
             this.sprite.position.vx = 200;
 
