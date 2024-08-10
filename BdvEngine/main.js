@@ -1,6 +1,6 @@
 let engine;
 window.onload = () => {
-    const canvas = document.createElement('canvas');
+    const canvas = document.createElement("canvas");
     canvas.id = "mainFrame";
     document.body.appendChild(canvas);
     engine = new BdvEngine.Engine(canvas);
@@ -19,10 +19,10 @@ var BdvEngine;
             BdvEngine.GLUTools.init(this.canvas);
             BdvEngine.AssetManager.init();
             BdvEngine.gl.clearColor(0, 0, 0, 1);
-            this.loadShaders();
-            this.shader.use();
+            this.defaultShader = new BdvEngine.DefaultShader();
+            this.defaultShader.use();
             this.projectionMatrix = BdvEngine.m4x4.ortho(0, this.canvas.width, 0, this.canvas.height, -100.0, 100.0);
-            this.sprite = new BdvEngine.Sprite("block", "assets/block.png", 16, 16);
+            this.sprite = new BdvEngine.Sprite("block", "assets/block.png", 32, 32);
             this.sprite.load();
             this.sprite.position.vx = 200;
             this.resize();
@@ -31,47 +31,20 @@ var BdvEngine;
         resize() {
             this.canvas.width = window.innerWidth;
             this.canvas.height = window.innerHeight;
-            BdvEngine.gl.viewport(-1, 1, -1, 1);
+            BdvEngine.gl.viewport(0, 0, BdvEngine.gl.canvas.width, BdvEngine.gl.canvas.height);
+            this.projectionMatrix = BdvEngine.m4x4.ortho(0, this.canvas.width, 0, this.canvas.height, -100.0, 100.0);
         }
         loop() {
             BdvEngine.MessageBus.update(0);
             BdvEngine.gl.clear(BdvEngine.gl.COLOR_BUFFER_BIT);
-            let colorPosition = this.shader.getUniformLocation("u_color");
+            let colorPosition = this.defaultShader.getUniformLocation("u_color");
             BdvEngine.gl.uniform4f(colorPosition, 1, 1, 1, 1);
-            let projectionPosition = this.shader.getUniformLocation("u_proj");
+            let projectionPosition = this.defaultShader.getUniformLocation("u_proj");
             BdvEngine.gl.uniformMatrix4fv(projectionPosition, false, new Float32Array(this.projectionMatrix.mData));
-            let transformLocation = this.shader.getUniformLocation("u_transf");
+            let transformLocation = this.defaultShader.getUniformLocation("u_transf");
             BdvEngine.gl.uniformMatrix4fv(transformLocation, false, new Float32Array(BdvEngine.m4x4.translation(this.sprite.position).mData));
-            this.sprite.render(this.shader);
+            this.sprite.render(this.defaultShader);
             requestAnimationFrame(this.loop.bind(this));
-        }
-        loadShaders() {
-            let vertexSource = `
-                attribute vec3 a_pos;
-                attribute vec2 a_textCoord;
-
-                uniform mat4 u_proj;
-                uniform mat4 u_transf;
-
-                varying vec2 v_textCoord;
-
-                void main() {
-                    gl_Position = u_proj * u_transf * vec4(a_pos, 1.0);
-                    v_textCoord = a_textCoord;
-                }
-            `;
-            let fragmentSource = `
-                precision mediump float;
-                uniform vec4 u_color;
-                uniform sampler2D u_diffuse;
-
-                varying vec2 v_textCoord;
-
-                void main() {
-                    gl_FragColor = u_color * texture2D(u_diffuse, v_textCoord);
-                }
-            `;
-            this.shader = new BdvEngine.Shader("primitiveShader", vertexSource, fragmentSource);
         }
     }
     BdvEngine.Engine = Engine;
@@ -99,7 +72,7 @@ var BdvEngine;
                     return;
                 }
             }
-            console.log(`AssetManager::Unable to load asset with the defined extesion ${ext}.`);
+            console.log(`AssetManager::Unable to load asset with the defined extension ${ext}.`);
         }
         static isLoaded(assetName) {
             return !!AssetManager.assetsPool[assetName];
@@ -372,15 +345,10 @@ var BdvEngine;
 var BdvEngine;
 (function (BdvEngine) {
     class Shader {
-        constructor(name, vertexSource, fragmentSource) {
+        constructor(name) {
             this.attributes = {};
             this.uniforms = {};
             this.shaderName = name;
-            let vertexShader = this.loadShader(vertexSource, BdvEngine.gl.VERTEX_SHADER);
-            let fragmentShader = this.loadShader(fragmentSource, BdvEngine.gl.FRAGMENT_SHADER);
-            this.createProgram(vertexShader, fragmentShader);
-            this.getAttributes();
-            this.getUniforms();
         }
         get name() {
             return this.shaderName;
@@ -398,12 +366,19 @@ var BdvEngine;
                 throw new Error(`Unable to fetch uniform with name ${name} in shader ${this.shaderName}.`);
             return this.uniforms[name];
         }
+        load(vertexSource, fragmentSource) {
+            let vertexShader = this.loadShader(vertexSource, BdvEngine.gl.VERTEX_SHADER);
+            let fragmentShader = this.loadShader(fragmentSource, BdvEngine.gl.FRAGMENT_SHADER);
+            this.createProgram(vertexShader, fragmentShader);
+            this.getAttributes();
+            this.getUniforms();
+        }
         loadShader(source, shaderType) {
             let shader = BdvEngine.gl.createShader(shaderType);
             BdvEngine.gl.shaderSource(shader, source);
             BdvEngine.gl.compileShader(shader);
             let error = BdvEngine.gl.getShaderInfoLog(shader);
-            if (error !== '') {
+            if (error !== "") {
                 throw new Error(`Error while compiling shader program with name ${this.shaderName}: ${error}`);
             }
             return shader;
@@ -414,7 +389,7 @@ var BdvEngine;
             BdvEngine.gl.attachShader(this.program, fragmentShader);
             BdvEngine.gl.linkProgram(this.program);
             let error = BdvEngine.gl.getProgramInfoLog(this.program);
-            if (error !== '') {
+            if (error !== "") {
                 throw new Error(`Error linking shader with name ${this.shaderName}: ${error}`);
             }
         }
@@ -438,6 +413,43 @@ var BdvEngine;
         }
     }
     BdvEngine.Shader = Shader;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class DefaultShader extends BdvEngine.Shader {
+        constructor() {
+            super("default");
+            this.load(this.getVertexSource(), this.getFragmentSource());
+        }
+        getVertexSource() {
+            return `
+      attribute vec3 a_pos;
+      attribute vec2 a_textCoord;
+
+      uniform mat4 u_proj;
+      uniform mat4 u_transf;
+
+      varying vec2 v_textCoord;
+
+      void main() {
+          gl_Position = u_proj * u_transf * vec4(a_pos, 1.0);
+          v_textCoord = a_textCoord;
+      }`;
+        }
+        getFragmentSource() {
+            return `
+      precision mediump float;
+      uniform vec4 u_color;
+      uniform sampler2D u_diffuse;
+
+      varying vec2 v_textCoord;
+
+      void main() {
+          gl_FragColor = u_color * texture2D(u_diffuse, v_textCoord);
+      }`;
+        }
+    }
+    BdvEngine.DefaultShader = DefaultShader;
 })(BdvEngine || (BdvEngine = {}));
 var BdvEngine;
 (function (BdvEngine) {
@@ -470,19 +482,42 @@ var BdvEngine;
             textCoordAttr.size = 2;
             this.buffer.addAttrLocation(textCoordAttr);
             let vertices = [
-                0, 0, 0, 0, 0,
-                0, this.height, 0, 0, 1.0,
-                this.width, this.height, 0, 1.0, 1.0,
-                this.width, this.height, 0, 1.0, 1.0,
-                this.width, 0, 0, 1.0, 0,
-                0, 0, 0, 0, 0
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                this.height,
+                0,
+                0,
+                1.0,
+                this.width,
+                this.height,
+                0,
+                1.0,
+                1.0,
+                this.width,
+                this.height,
+                0,
+                1.0,
+                1.0,
+                this.width,
+                0,
+                0,
+                1.0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
             ];
             this.buffer.pushBack(vertices);
             this.buffer.upload();
             this.buffer.unbind();
         }
-        update(tick) {
-        }
+        update(tick) { }
         render(shader) {
             this.texture.activate(0);
             let diffuseLocation = shader.getUniformLocation("u_diffuse");
@@ -560,7 +595,7 @@ var BdvEngine;
             this.isLoaded = true;
         }
         isPow2() {
-            return (this.isValPow2(this.width) && this.isValPow2(this.height));
+            return this.isValPow2(this.width) && this.isValPow2(this.height);
         }
         isValPow2(value) {
             return (value & (value - 1)) == 0;
