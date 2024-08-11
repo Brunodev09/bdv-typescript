@@ -6,27 +6,29 @@ namespace BdvEngine {
 
     private buffer: glBuffer;
 
-    private texture: Texture;
-    private textureName: string;
+    private materialName: string;
+    private material: Material;
 
     public position: vec3 = new vec3();
 
     public constructor(
       name: string,
-      textureName: string,
+      materialName: string,
       width: number = 100,
       height: number = 100
     ) {
       this.name = name;
       this.width = width;
       this.height = height;
-      this.textureName = textureName;
-      this.texture = TextureManager.getTexture(textureName);
+      this.materialName = materialName;
+      this.material = MaterialManager.get(this.materialName);
     }
 
     public destructor(): void {
       this.buffer.destroy();
-      TextureManager.flushTexture(this.textureName);
+      MaterialManager.flush(this.materialName);
+      this.material = undefined;
+      this.materialName = undefined;
     }
 
     public get getName(): string {
@@ -91,9 +93,22 @@ namespace BdvEngine {
     public update(tick: number): void {}
 
     public render(shader: Shader): void {
-      this.texture.activate(0);
-      let diffuseLocation = shader.getUniformLocation("u_diffuse");
-      gl.uniform1i(diffuseLocation, 0);
+      const transformLocation = shader.getUniformLocation("u_transf");
+      gl.uniformMatrix4fv(
+        transformLocation,
+        false,
+        new Float32Array(m4x4.translation(this.position).mData)
+      );
+
+      const colorLocation = shader.getUniformLocation("u_color");
+
+      gl.uniform4fv(colorLocation, this.material.diffColor.toArrayFloat32());
+
+      if (this.material.diffTexture) {
+        this.material.diffTexture.activate(0);
+        const diffuseLocation = shader.getUniformLocation("u_diffuse");
+        gl.uniform1i(diffuseLocation, 0);
+      }
 
       this.buffer.bind();
       this.buffer.draw();

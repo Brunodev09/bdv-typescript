@@ -20,18 +20,27 @@ namespace BdvEngine {
       this.defaultShader = new DefaultShader();
       this.defaultShader.use();
 
+      MaterialManager.register(
+        new Material(
+          "block_mat",
+          "assets/block.png",
+          new Color(0, 128, 255, 255)
+        )
+      );
+
       this.projectionMatrix = m4x4.ortho(
         0,
         this.canvas.width,
-        0,
         this.canvas.height,
+        0,
         -100.0,
         100.0
       );
 
-      this.sprite = new Sprite("block", "assets/block.png", 32, 32);
+      this.sprite = new Sprite("block", "block_mat", 32, 32);
       this.sprite.load();
       this.sprite.position.vx = 200;
+      this.sprite.position.vy = 100;
 
       this.resize();
       this.loop();
@@ -45,8 +54,8 @@ namespace BdvEngine {
       this.projectionMatrix = m4x4.ortho(
         0,
         this.canvas.width,
-        0,
         this.canvas.height,
+        0,
         -100.0,
         100.0
       );
@@ -57,21 +66,11 @@ namespace BdvEngine {
 
       gl.clear(gl.COLOR_BUFFER_BIT);
 
-      let colorPosition = this.defaultShader.getUniformLocation("u_color");
-      gl.uniform4f(colorPosition, 1, 1, 1, 1);
-
       let projectionPosition = this.defaultShader.getUniformLocation("u_proj");
       gl.uniformMatrix4fv(
         projectionPosition,
         false,
         new Float32Array(this.projectionMatrix.mData)
-      );
-
-      let transformLocation = this.defaultShader.getUniformLocation("u_transf");
-      gl.uniformMatrix4fv(
-        transformLocation,
-        false,
-        new Float32Array(m4x4.translation(this.sprite.position).mData)
       );
 
       this.sprite.render(this.defaultShader);
