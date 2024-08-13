@@ -1,15 +1,9 @@
 namespace BdvEngine {
-
     export class m4x4 {
         private data: number[] = [];
 
         private constructor() {
-            this.data = [
-                1, 0, 0, 0,
-                0, 1, 0, 0,
-                0, 0, 1, 0,
-                0, 0, 0, 1
-            ];
+            this.data = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
         }
 
         public get mData(): number[] {
@@ -35,7 +29,7 @@ namespace BdvEngine {
             m.data[12] = (left + right) * lr;
             m.data[13] = (top + bottom) * bt;
             m.data[14] = (zFar + zNear) * nf;
-            
+
             return m;
         }
 

@@ -1,5 +1,4 @@
 namespace BdvEngine {
-
     export class vec2 {
         private x: number;
         private y: number;
@@ -24,7 +23,6 @@ namespace BdvEngine {
         public set vy(point: number) {
             this.y = point;
         }
-
 
         public toArray(): number[] {
             return [this.x, this.y];

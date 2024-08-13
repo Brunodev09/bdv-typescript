@@ -1,6 +1,6 @@
 namespace BdvEngine {
-  export interface IAsset {
-    readonly name: string;
-    readonly data: any;
-  }
+    export interface IAsset {
+        readonly name: string;
+        readonly data: any;
+    }
 }

@@ -1,5 +1,4 @@
 namespace BdvEngine {
-
     export class vec3 {
         private x: number;
         private y: number;

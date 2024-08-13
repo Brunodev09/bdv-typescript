@@ -1,7 +1,7 @@
 namespace BdvEngine {
-  export interface IAssetLoader {
-    readonly fileExt: string[];
+    export interface IAssetLoader {
+        readonly fileExt: string[];
 
-    loadAsset(assetName: string): void;
-  }
+        loadAsset(assetName: string): void;
+    }
 }
