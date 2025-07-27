@@ -9,8 +9,6 @@ namespace BdvEngine {
         private materialName: string;
         private material: Material;
 
-        public position: vec3 = new vec3();
-
         public constructor(name: string, materialName: string, width: number = 100, height: number = 100) {
             this.name = name;
             this.width = width;
@@ -87,9 +85,9 @@ namespace BdvEngine {
 
         public update(tick: number): void {}
 
-        public render(shader: Shader): void {
+        public render(shader: Shader, modelMatrix: m4x4): void {
             const transformLocation = shader.getUniformLocation('u_transf');
-            gl.uniformMatrix4fv(transformLocation, false, new Float32Array(m4x4.translation(this.position).mData));
+            gl.uniformMatrix4fv(transformLocation, false, modelMatrix.toFloat32Array());
 
             const colorLocation = shader.getUniformLocation('u_color');
 

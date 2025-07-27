@@ -34,12 +34,26 @@ namespace BdvEngine {
             this.z = point;
         }
 
+        public copyFrom(vec: vec3): void {
+            this.x = vec.x;
+            this.y = vec.y;
+            this.z = vec.z;
+        }
+
         public toArray(): number[] {
             return [this.x, this.y, this.z];
         }
 
         public toFloat32(): Float32Array {
             return new Float32Array(this.toArray());
+        }
+
+        public static get zero(): vec3 {
+            return new vec3();
+        }
+
+        public static get one(): vec3 {
+            return new vec3(1, 1, 1);
         }
     }
 }

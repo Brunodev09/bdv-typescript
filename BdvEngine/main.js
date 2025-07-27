@@ -1,7 +1,7 @@
 let engine;
 window.onload = () => {
-    const canvas = document.createElement("canvas");
-    canvas.id = "mainFrame";
+    const canvas = document.createElement('canvas');
+    canvas.id = 'mainFrame';
     document.body.appendChild(canvas);
     engine = new BdvEngine.Engine(canvas);
     engine.start();
@@ -21,12 +21,10 @@ var BdvEngine;
             BdvEngine.gl.clearColor(0, 0, 0, 1);
             this.defaultShader = new BdvEngine.DefaultShader();
             this.defaultShader.use();
-            BdvEngine.MaterialManager.register(new BdvEngine.Material("block_mat", "assets/block.png", new BdvEngine.Color(0, 128, 255, 255)));
+            BdvEngine.MaterialManager.register(new BdvEngine.Material('block_mat', 'assets/block.png', new BdvEngine.Color(0, 128, 255, 255)));
+            let zoneId = BdvEngine.ZoneManager.createTestZone();
             this.projectionMatrix = BdvEngine.m4x4.ortho(0, this.canvas.width, this.canvas.height, 0, -100.0, 100.0);
-            this.sprite = new BdvEngine.Sprite("block", "block_mat", 32, 32);
-            this.sprite.load();
-            this.sprite.position.vx = 200;
-            this.sprite.position.vy = 100;
+            BdvEngine.ZoneManager.changeZone(zoneId);
             this.resize();
             this.loop();
         }
@@ -38,10 +36,11 @@ var BdvEngine;
         }
         loop() {
             BdvEngine.MessageBus.update(0);
+            BdvEngine.ZoneManager.update(0);
             BdvEngine.gl.clear(BdvEngine.gl.COLOR_BUFFER_BIT);
-            let projectionPosition = this.defaultShader.getUniformLocation("u_proj");
+            BdvEngine.ZoneManager.render(this.defaultShader);
+            let projectionPosition = this.defaultShader.getUniformLocation('u_proj');
             BdvEngine.gl.uniformMatrix4fv(projectionPosition, false, new Float32Array(this.projectionMatrix.mData));
-            this.sprite.render(this.defaultShader);
             requestAnimationFrame(this.loop.bind(this));
         }
     }
@@ -49,7 +48,7 @@ var BdvEngine;
 })(BdvEngine || (BdvEngine = {}));
 var BdvEngine;
 (function (BdvEngine) {
-    BdvEngine.MESSAGE_ASSET_LOADER_LOADED = "MESSAGE_ASSET_LOADER_LOADED";
+    BdvEngine.MESSAGE_ASSET_LOADER_LOADED = 'MESSAGE_ASSET_LOADER_LOADED';
     class AssetManager {
         constructor() { }
         static init() {
@@ -63,7 +62,7 @@ var BdvEngine;
             BdvEngine.Message.send(`${BdvEngine.MESSAGE_ASSET_LOADER_LOADED}::${asset.name}`, this, asset);
         }
         static loadAsset(assetName) {
-            let ext = assetName.split(".").pop().toLowerCase();
+            let ext = assetName.split('.').pop().toLowerCase();
             for (let loader of AssetManager.loaders) {
                 if (loader.fileExt.indexOf(ext) !== -1) {
                     loader.loadAsset(assetName);
@@ -108,7 +107,7 @@ var BdvEngine;
 (function (BdvEngine) {
     class ImageLoader {
         get fileExt() {
-            return ["png", "gif", "jpg"];
+            return ['png', 'gif', 'jpg'];
         }
         loadAsset(assetName) {
             let img = new Image();
@@ -217,9 +216,45 @@ var BdvEngine;
 })(BdvEngine || (BdvEngine = {}));
 var BdvEngine;
 (function (BdvEngine) {
+    class BaseComponent {
+        constructor(name) {
+            this.name = name;
+        }
+        setOwner(owner) {
+            this.owner = owner;
+        }
+        get getOwner() {
+            return this.owner;
+        }
+        load() { }
+        unload() { }
+        update(deltaTime) { }
+        render(shader) { }
+    }
+    BdvEngine.BaseComponent = BaseComponent;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class SpriteComponent extends BdvEngine.BaseComponent {
+        constructor(name, materialName) {
+            super(name);
+            this.sprite = new BdvEngine.Sprite(name, materialName);
+        }
+        load() {
+            this.sprite.load();
+        }
+        render(shader) {
+            this.sprite.render(shader, this.getOwner.getWorldMatrix);
+            super.render(shader);
+        }
+    }
+    BdvEngine.SpriteComponent = SpriteComponent;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
     class GLUTools {
         static init(canvas) {
-            BdvEngine.gl = canvas.getContext("webgl");
+            BdvEngine.gl = canvas.getContext('webgl');
             if (!BdvEngine.gl)
                 throw new Error(`Unable to initialize WebGL.`);
         }
@@ -376,7 +411,7 @@ var BdvEngine;
             BdvEngine.gl.shaderSource(shader, source);
             BdvEngine.gl.compileShader(shader);
             let error = BdvEngine.gl.getShaderInfoLog(shader);
-            if (error !== "") {
+            if (error !== '') {
                 throw new Error(`Error while compiling shader program with name ${this.shaderName}: ${error}`);
             }
             return shader;
@@ -387,7 +422,7 @@ var BdvEngine;
             BdvEngine.gl.attachShader(this.program, fragmentShader);
             BdvEngine.gl.linkProgram(this.program);
             let error = BdvEngine.gl.getProgramInfoLog(this.program);
-            if (error !== "") {
+            if (error !== '') {
                 throw new Error(`Error linking shader with name ${this.shaderName}: ${error}`);
             }
         }
@@ -416,7 +451,7 @@ var BdvEngine;
 (function (BdvEngine) {
     class DefaultShader extends BdvEngine.Shader {
         constructor() {
-            super("default");
+            super('default');
             this.load(this.getVertexSource(), this.getFragmentSource());
         }
         getVertexSource() {
@@ -498,12 +533,7 @@ var BdvEngine;
             return [this.red, this.green, this.blue, this.alpha];
         }
         toArrayFloat() {
-            return [
-                this.red / 255.0,
-                this.green / 255.0,
-                this.blue / 255.0,
-                this.alpha / 255.0,
-            ];
+            return [this.red / 255.0, this.green / 255.0, this.blue / 255.0, this.alpha / 255.0];
         }
         toArrayFloat32() {
             return new Float32Array(this.toArrayFloat());
@@ -613,7 +643,6 @@ var BdvEngine;
 (function (BdvEngine) {
     class Sprite {
         constructor(name, materialName, width = 100, height = 100) {
-            this.position = new BdvEngine.vec3();
             this.name = name;
             this.width = width;
             this.height = height;
@@ -678,14 +707,14 @@ var BdvEngine;
             this.buffer.unbind();
         }
         update(tick) { }
-        render(shader) {
-            const transformLocation = shader.getUniformLocation("u_transf");
-            BdvEngine.gl.uniformMatrix4fv(transformLocation, false, new Float32Array(BdvEngine.m4x4.translation(this.position).mData));
-            const colorLocation = shader.getUniformLocation("u_color");
+        render(shader, modelMatrix) {
+            const transformLocation = shader.getUniformLocation('u_transf');
+            BdvEngine.gl.uniformMatrix4fv(transformLocation, false, modelMatrix.toFloat32Array());
+            const colorLocation = shader.getUniformLocation('u_color');
             BdvEngine.gl.uniform4fv(colorLocation, this.material.diffColor.toArrayFloat32());
             if (this.material.diffTexture) {
                 this.material.diffTexture.activate(0);
-                const diffuseLocation = shader.getUniformLocation("u_diffuse");
+                const diffuseLocation = shader.getUniformLocation('u_diffuse');
                 BdvEngine.gl.uniform1i(diffuseLocation, 0);
             }
             this.buffer.bind();
@@ -815,12 +844,7 @@ var BdvEngine;
     class m4x4 {
         constructor() {
             this.data = [];
-            this.data = [
-                1, 0, 0, 0,
-                0, 1, 0, 0,
-                0, 0, 1, 0,
-                0, 0, 0, 1
-            ];
+            this.data = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
         }
         get mData() {
             return this.data;
@@ -848,8 +872,133 @@ var BdvEngine;
             m.data[14] = position.vz;
             return m;
         }
+        static rotationX(angleInRadians) {
+            let m = new m4x4();
+            let c = Math.cos(angleInRadians);
+            let s = Math.sin(angleInRadians);
+            m.data[5] = c;
+            m.data[6] = s;
+            m.data[9] = -s;
+            m.data[10] = c;
+            return m;
+        }
+        static rotationY(angleInRadians) {
+            let m = new m4x4();
+            let c = Math.cos(angleInRadians);
+            let s = Math.sin(angleInRadians);
+            m.data[0] = c;
+            m.data[2] = -s;
+            m.data[8] = s;
+            m.data[10] = c;
+            return m;
+        }
+        static rotationZ(angleInRadians) {
+            let m = new m4x4();
+            let c = Math.cos(angleInRadians);
+            let s = Math.sin(angleInRadians);
+            m.data[0] = c;
+            m.data[1] = s;
+            m.data[4] = -s;
+            m.data[5] = c;
+            return m;
+        }
+        static rotationXYZ(xRadians, yRadians, zRadians) {
+            let rx = m4x4.rotationX(xRadians);
+            let ry = m4x4.rotationY(yRadians);
+            let rz = m4x4.rotationZ(zRadians);
+            return m4x4.multiply(m4x4.multiply(rz, ry), rx);
+        }
+        static scale(scale) {
+            let m = new m4x4();
+            m.data[0] = scale.vx;
+            m.data[5] = scale.vy;
+            m.data[10] = scale.vz;
+            return m;
+        }
+        static multiply(a, b) {
+            let m = new m4x4();
+            let b00 = b.data[0 * 4 + 0];
+            let b01 = b.data[0 * 4 + 1];
+            let b02 = b.data[0 * 4 + 2];
+            let b03 = b.data[0 * 4 + 3];
+            let b10 = b.data[1 * 4 + 0];
+            let b11 = b.data[1 * 4 + 1];
+            let b12 = b.data[1 * 4 + 2];
+            let b13 = b.data[1 * 4 + 3];
+            let b20 = b.data[2 * 4 + 0];
+            let b21 = b.data[2 * 4 + 1];
+            let b22 = b.data[2 * 4 + 2];
+            let b23 = b.data[2 * 4 + 3];
+            let b30 = b.data[3 * 4 + 0];
+            let b31 = b.data[3 * 4 + 1];
+            let b32 = b.data[3 * 4 + 2];
+            let b33 = b.data[3 * 4 + 3];
+            let a00 = a.data[0 * 4 + 0];
+            let a01 = a.data[0 * 4 + 1];
+            let a02 = a.data[0 * 4 + 2];
+            let a03 = a.data[0 * 4 + 3];
+            let a10 = a.data[1 * 4 + 0];
+            let a11 = a.data[1 * 4 + 1];
+            let a12 = a.data[1 * 4 + 2];
+            let a13 = a.data[1 * 4 + 3];
+            let a20 = a.data[2 * 4 + 0];
+            let a21 = a.data[2 * 4 + 1];
+            let a22 = a.data[2 * 4 + 2];
+            let a23 = a.data[2 * 4 + 3];
+            let a30 = a.data[3 * 4 + 0];
+            let a31 = a.data[3 * 4 + 1];
+            let a32 = a.data[3 * 4 + 2];
+            let a33 = a.data[3 * 4 + 3];
+            m.data[0] = b00 * a00 + b01 * a10 + b02 * a20 + b03 * a30;
+            m.data[1] = b00 * a01 + b01 * a11 + b02 * a21 + b03 * a31;
+            m.data[2] = b00 * a02 + b01 * a12 + b02 * a22 + b03 * a32;
+            m.data[3] = b00 * a03 + b01 * a13 + b02 * a23 + b03 * a33;
+            m.data[4] = b10 * a00 + b11 * a10 + b12 * a20 + b13 * a30;
+            m.data[5] = b10 * a01 + b11 * a11 + b12 * a21 + b13 * a31;
+            m.data[6] = b10 * a02 + b11 * a12 + b12 * a22 + b13 * a32;
+            m.data[7] = b10 * a03 + b11 * a13 + b12 * a23 + b13 * a33;
+            m.data[8] = b20 * a00 + b21 * a10 + b22 * a20 + b23 * a30;
+            m.data[9] = b20 * a01 + b21 * a11 + b22 * a21 + b23 * a31;
+            m.data[10] = b20 * a02 + b21 * a12 + b22 * a22 + b23 * a32;
+            m.data[11] = b20 * a03 + b21 * a13 + b22 * a23 + b23 * a33;
+            m.data[12] = b30 * a00 + b31 * a10 + b32 * a20 + b33 * a30;
+            m.data[13] = b30 * a01 + b31 * a11 + b32 * a21 + b33 * a31;
+            m.data[14] = b30 * a02 + b31 * a12 + b32 * a22 + b33 * a32;
+            m.data[15] = b30 * a03 + b31 * a13 + b32 * a23 + b33 * a33;
+            return m;
+        }
+        toFloat32Array() {
+            return new Float32Array(this.data);
+        }
+        copyFrom(m) {
+            for (let i = 0; i < 16; i++) {
+                this.data[i] = m.data[i];
+            }
+        }
     }
     BdvEngine.m4x4 = m4x4;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class transform {
+        constructor() {
+            this.position = BdvEngine.vec3.zero;
+            this.rotation = BdvEngine.vec3.zero;
+            this.scale = BdvEngine.vec3.one;
+        }
+        copyFrom(transform) {
+            this.position.copyFrom(transform.position);
+            this.rotation.copyFrom(transform.rotation);
+            this.scale.copyFrom(transform.scale);
+        }
+        getTransformationMatrix() {
+            let translation = BdvEngine.m4x4.translation(this.position);
+            let rotation = BdvEngine.m4x4.rotationXYZ(this.rotation.vx, this.rotation.vy, this.rotation.vz);
+            let scale = BdvEngine.m4x4.scale(this.scale);
+            return BdvEngine.m4x4.multiply(BdvEngine.m4x4.multiply(translation, rotation), scale);
+        }
+    }
+    BdvEngine.transform = transform;
 })(BdvEngine || (BdvEngine = {}));
 var BdvEngine;
 (function (BdvEngine) {
@@ -905,13 +1054,277 @@ var BdvEngine;
         set vz(point) {
             this.z = point;
         }
+        copyFrom(vec) {
+            this.x = vec.x;
+            this.y = vec.y;
+            this.z = vec.z;
+        }
         toArray() {
             return [this.x, this.y, this.z];
         }
         toFloat32() {
             return new Float32Array(this.toArray());
         }
+        static get zero() {
+            return new vec3();
+        }
+        static get one() {
+            return new vec3(1, 1, 1);
+        }
     }
     BdvEngine.vec3 = vec3;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class Scene {
+        constructor() {
+            this.root = new BdvEngine.SimObject(0, '__root__', this);
+        }
+        get getRoot() {
+            return this.root;
+        }
+        get isLoaded() {
+            return this.root.getIsLoaded;
+        }
+        addObject(object) {
+            this.root.addChild(object);
+        }
+        removeObject(object) {
+            this.root.removeChild(object);
+        }
+        getObjectByName(name) {
+            return this.root.getObjectByName(name);
+        }
+        load() {
+            this.root.load();
+        }
+        update(deltaTime) {
+            this.root.update(deltaTime);
+        }
+        render(shader) {
+            this.root.render(shader);
+        }
+    }
+    BdvEngine.Scene = Scene;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class SimObject {
+        constructor(id, name, scene) {
+            this.children = [];
+            this.isLoaded = false;
+            this.components = [];
+            this.localMatrix = BdvEngine.m4x4.identity();
+            this.worldMatrix = BdvEngine.m4x4.identity();
+            this.transform = new BdvEngine.transform();
+            this.id = id;
+            this.name = name;
+            this.scene = scene;
+        }
+        onAdded(scene) {
+            this.scene = scene;
+        }
+        updateWorldMatrix(parentWorldMatrix) {
+            if (parentWorldMatrix) {
+                this.worldMatrix = BdvEngine.m4x4.multiply(parentWorldMatrix, this.localMatrix);
+            }
+            else {
+                this.worldMatrix.copyFrom(this.localMatrix);
+            }
+        }
+        get getId() {
+            return this.id;
+        }
+        get getName() {
+            return this.name;
+        }
+        get getLocalMatrix() {
+            return this.localMatrix;
+        }
+        get getWorldMatrix() {
+            return this.worldMatrix;
+        }
+        get getParent() {
+            return this.parent;
+        }
+        get getIsLoaded() {
+            return this.isLoaded;
+        }
+        addChild(child) {
+            child.parent = this;
+            this.children.push(child);
+            child.onAdded(this.scene);
+        }
+        removeChild(child) {
+            let index = this.children.indexOf(child);
+            if (index !== -1) {
+                child.parent = undefined;
+                this.children.splice(index, 1);
+            }
+        }
+        getObjectByName(name) {
+            if (this.name === name) {
+                return this;
+            }
+            for (let child of this.children) {
+                let result = child.getObjectByName(name);
+                if (result) {
+                    return result;
+                }
+            }
+            return undefined;
+        }
+        addComponent(component) {
+            this.components.push(component);
+            component.setOwner(this);
+        }
+        load() {
+            this.isLoaded = true;
+            for (let component of this.components) {
+                component.load();
+            }
+            for (let child of this.children) {
+                child.load();
+            }
+        }
+        update(deltaTime) {
+            this.localMatrix = this.transform.getTransformationMatrix();
+            this.updateWorldMatrix(this.parent ? this.parent.getWorldMatrix : undefined);
+            for (let component of this.components) {
+                component.update(deltaTime);
+            }
+            for (let child of this.children) {
+                child.update(deltaTime);
+            }
+        }
+        render(shader) {
+            for (let component of this.components) {
+                component.render(shader);
+            }
+            for (let child of this.children) {
+                child.render(shader);
+            }
+        }
+    }
+    BdvEngine.SimObject = SimObject;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    let ZoneState;
+    (function (ZoneState) {
+        ZoneState[ZoneState["UNINITIALIZED"] = 0] = "UNINITIALIZED";
+        ZoneState[ZoneState["LOADING"] = 1] = "LOADING";
+        ZoneState[ZoneState["UPDATING"] = 2] = "UPDATING";
+    })(ZoneState = BdvEngine.ZoneState || (BdvEngine.ZoneState = {}));
+    class Zone {
+        constructor(id, name, description) {
+            this.state = ZoneState.UNINITIALIZED;
+            this.id = id;
+            this.name = name;
+            this.description = description;
+            this.scene = new BdvEngine.Scene();
+        }
+        get getId() {
+            return this.id;
+        }
+        get getName() {
+            return this.name;
+        }
+        get getDescription() {
+            return this.description;
+        }
+        get getScene() {
+            return this.scene;
+        }
+        load() {
+            this.state = ZoneState.LOADING;
+            this.scene.load();
+            this.state = ZoneState.UPDATING;
+        }
+        unload() {
+            this.state = ZoneState.UNINITIALIZED;
+        }
+        update(deltaTime) {
+            if (this.state === ZoneState.UPDATING) {
+                this.scene.update(deltaTime);
+            }
+        }
+        render(shader) {
+            if (this.state === ZoneState.UPDATING) {
+                this.scene.render(shader);
+            }
+        }
+        onActivate() { }
+        onDeactivate() { }
+    }
+    BdvEngine.Zone = Zone;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class ZoneManager {
+        constructor() { }
+        static createZone(name, description) {
+            ZoneManager.globalZoneId++;
+            let zone = new BdvEngine.Zone(ZoneManager.globalZoneId, name, description);
+            ZoneManager.zones[ZoneManager.globalZoneId] = zone;
+            return ZoneManager.globalZoneId;
+        }
+        static createTestZone() {
+            ZoneManager.globalZoneId++;
+            ZoneManager.zones[ZoneManager.globalZoneId] = new BdvEngine.ZoneTest(ZoneManager.globalZoneId, 'test', 'simple test zone');
+            return ZoneManager.globalZoneId;
+        }
+        static changeZone(zoneId) {
+            if (ZoneManager.currentZone) {
+                ZoneManager.currentZone.onDeactivate();
+                ZoneManager.currentZone.unload();
+            }
+            if (ZoneManager.zones[zoneId]) {
+                ZoneManager.currentZone = ZoneManager.zones[zoneId];
+                ZoneManager.currentZone.onActivate();
+                ZoneManager.currentZone.load();
+            }
+        }
+        static update(deltaTime) {
+            if (ZoneManager.currentZone) {
+                ZoneManager.currentZone.update(deltaTime);
+            }
+        }
+        static render(shader) {
+            if (ZoneManager.currentZone) {
+                ZoneManager.currentZone.render(shader);
+            }
+        }
+    }
+    ZoneManager.globalZoneId = -1;
+    ZoneManager.zones = {};
+    BdvEngine.ZoneManager = ZoneManager;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class ZoneTest extends BdvEngine.Zone {
+        load() {
+            this.parentObject = new BdvEngine.SimObject(0, 'parentObject');
+            this.parentObject.transform.position.vx = 300;
+            this.parentObject.transform.position.vy = 300;
+            this.parentSprite = new BdvEngine.SpriteComponent('parentSprite', 'block_mat');
+            this.parentObject.addComponent(this.parentSprite);
+            this.testObject = new BdvEngine.SimObject(1, 'testObject');
+            this.testSprite = new BdvEngine.SpriteComponent('testSprite', 'block_mat');
+            this.testObject.addComponent(this.testSprite);
+            this.testObject.transform.position.vx = 120;
+            this.testObject.transform.position.vy = 120;
+            this.parentObject.addChild(this.testObject);
+            this.getScene.addObject(this.parentObject);
+            this.testObject.load();
+            super.load();
+        }
+        update(deltaTime) {
+            this.parentObject.transform.rotation.vz += 0.01;
+            this.testObject.transform.rotation.vz += 0.01;
+            super.update(deltaTime);
+        }
+    }
+    BdvEngine.ZoneTest = ZoneTest;
 })(BdvEngine || (BdvEngine = {}));
 //# sourceMappingURL=main.js.map
