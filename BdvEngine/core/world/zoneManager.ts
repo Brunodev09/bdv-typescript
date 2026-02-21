@@ -1,49 +1,92 @@
 namespace BdvEngine {
-    export class ZoneManager {
-        private static globalZoneId: number = -1;
-        private static zones: {[id: number]: Zone} = {};
-        private static currentZone: Zone;
+  export class ZoneManager implements IMessageHandler {
+    private static globalZoneId: number = -1;
+    // private static zones: { [id: number]: Zone } = {};
+    private static registeredZones: { [id: number]: string } = {};
+    private static currentZone: Zone;
 
-        private constructor() {}
+    private static instance: ZoneManager;
 
-        public static createZone(name: string, description: string): number {
-            ZoneManager.globalZoneId++;
-            let zone = new Zone(ZoneManager.globalZoneId, name, description);
-            ZoneManager.zones[ZoneManager.globalZoneId] = zone;
+    private constructor() {}
 
-            return ZoneManager.globalZoneId;
-        }
-
-        public static createTestZone(): number {
-            ZoneManager.globalZoneId++;
-            ZoneManager.zones[ZoneManager.globalZoneId] = new ZoneTest(ZoneManager.globalZoneId, 'test', 'simple test zone');
-
-            return ZoneManager.globalZoneId;
-        }
-
-        public static changeZone(zoneId: number): void {
-            if (ZoneManager.currentZone) {
-                ZoneManager.currentZone.onDeactivate();
-                ZoneManager.currentZone.unload();
-            }
-
-            if (ZoneManager.zones[zoneId]) {
-                ZoneManager.currentZone = ZoneManager.zones[zoneId];
-                ZoneManager.currentZone.onActivate();
-                ZoneManager.currentZone.load();
-            }
-        }
-
-        public static update(deltaTime: number): void {
-            if (ZoneManager.currentZone) {
-                ZoneManager.currentZone.update(deltaTime);
-            }
-        }
-
-        public static render(shader: Shader): void {
-            if (ZoneManager.currentZone) {
-                ZoneManager.currentZone.render(shader);
-            }
-        }
+    public static init(): void {
+      ZoneManager.instance = new ZoneManager();
+      // Temporarily register the test zone.
+      ZoneManager.registeredZones[0] = "assets/zones/testZone.json";
     }
+
+    public static changeZone(zoneId: number): void {
+      if (ZoneManager.currentZone) {
+        ZoneManager.currentZone.onDeactivate();
+        ZoneManager.currentZone.unload();
+        ZoneManager.currentZone = undefined;
+      }
+
+      if (ZoneManager.registeredZones[zoneId] !== undefined) {
+        if (AssetManager.isLoaded(ZoneManager.registeredZones[zoneId])) {
+          let asset = AssetManager.get(ZoneManager.registeredZones[zoneId]);
+          ZoneManager.loadZone(asset);
+        } else {
+          Message.subscribe(
+            MESSAGE_ASSET_LOADER_LOADED +
+              "::" +
+              ZoneManager.registeredZones[zoneId],
+            ZoneManager.instance,
+          );
+          AssetManager.loadAsset(ZoneManager.registeredZones[zoneId]);
+        }
+      } else {
+        throw new Error("Zone id:" + zoneId.toString() + " does not exist.");
+      }
+    }
+
+    public static update(deltaTime: number): void {
+      if (ZoneManager.currentZone) {
+        ZoneManager.currentZone.update(deltaTime);
+      }
+    }
+
+    public static render(shader: Shader): void {
+      if (ZoneManager.currentZone) {
+        ZoneManager.currentZone.render(shader);
+      }
+    }
+
+    public onMessage(message: Message): void {
+      if (message.code.indexOf(MESSAGE_ASSET_LOADER_LOADED) !== -1) {
+        console.log("ZoneManager::Zone loaded:" + message.code);
+        let asset = message.context as JsonAsset;
+        ZoneManager.loadZone(asset);
+      }
+    }
+
+    private static loadZone(asset: JsonAsset): void {
+      console.log("ZoneManager::Loading zone:" + asset.name);
+
+      let zoneData = asset.data;
+      let zoneId: number;
+      if (zoneData.id === undefined) {
+        throw new Error("Zone file format exception: Zone id not present.");
+      } else {
+        zoneId = Number(zoneData.id);
+      }
+
+      let zoneName: string;
+      if (zoneData.name === undefined) {
+        throw new Error("Zone file format exception: Zone name not present.");
+      } else {
+        zoneName = String(zoneData.name);
+      }
+
+      let zoneDescription: string;
+      if (zoneData.description !== undefined) {
+        zoneDescription = String(zoneData.description);
+      }
+
+      ZoneManager.currentZone = new Zone(zoneId, zoneName, zoneDescription);
+      ZoneManager.currentZone.initialize(zoneData);
+      ZoneManager.currentZone.onActivate();
+      ZoneManager.currentZone.load();
+    }
+  }
 }

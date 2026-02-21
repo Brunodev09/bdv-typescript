@@ -69,7 +69,7 @@ namespace BdvEngine {
             for (let attr of this.attrInfo) {
                 gl.disableVertexAttribArray(attr.location);
             }
-            gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+            gl.bindBuffer(this.targetBufferType, undefined);
         }
 
         public addAttrLocation(info: glAttrInfo): void {
@@ -86,8 +86,8 @@ namespace BdvEngine {
         public upload(): void {
             gl.bindBuffer(this.targetBufferType, this.buffer);
 
-            // Float32Array and other types inherits from ArrayBuffer
-            let bufferData: ArrayBuffer;
+            // WebGL accepts ArrayBufferView inputs (typed arrays) here.
+            let bufferData: ArrayBufferView;
 
             switch (this.type) {
                 case gl.FLOAT: {

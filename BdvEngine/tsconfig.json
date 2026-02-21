@@ -6,7 +6,8 @@
         "preserveConstEnums": true,
         "outFile": "main.js",
         "sourceMap": true,
-        "target": "es6"
+        "target": "es6",
+        "skipLibCheck": true
     },
     "include": [
         "**/*"

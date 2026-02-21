@@ -18,13 +18,13 @@ var BdvEngine;
         start() {
             BdvEngine.GLUTools.init(this.canvas);
             BdvEngine.AssetManager.init();
+            BdvEngine.ZoneManager.init();
             BdvEngine.gl.clearColor(0, 0, 0, 1);
             this.defaultShader = new BdvEngine.DefaultShader();
             this.defaultShader.use();
-            BdvEngine.MaterialManager.register(new BdvEngine.Material('block_mat', 'assets/block.png', new BdvEngine.Color(0, 128, 255, 255)));
-            let zoneId = BdvEngine.ZoneManager.createTestZone();
+            BdvEngine.MaterialManager.register(new BdvEngine.Material("block_mat", "assets/textures/block.png", new BdvEngine.Color(0, 128, 255, 255)));
             this.projectionMatrix = BdvEngine.m4x4.ortho(0, this.canvas.width, this.canvas.height, 0, -100.0, 100.0);
-            BdvEngine.ZoneManager.changeZone(zoneId);
+            BdvEngine.ZoneManager.changeZone(0);
             this.resize();
             this.loop();
         }
@@ -39,7 +39,7 @@ var BdvEngine;
             BdvEngine.ZoneManager.update(0);
             BdvEngine.gl.clear(BdvEngine.gl.COLOR_BUFFER_BIT);
             BdvEngine.ZoneManager.render(this.defaultShader);
-            let projectionPosition = this.defaultShader.getUniformLocation('u_proj');
+            let projectionPosition = this.defaultShader.getUniformLocation("u_proj");
             BdvEngine.gl.uniformMatrix4fv(projectionPosition, false, new Float32Array(this.projectionMatrix.mData));
             requestAnimationFrame(this.loop.bind(this));
         }
@@ -48,11 +48,12 @@ var BdvEngine;
 })(BdvEngine || (BdvEngine = {}));
 var BdvEngine;
 (function (BdvEngine) {
-    BdvEngine.MESSAGE_ASSET_LOADER_LOADED = 'MESSAGE_ASSET_LOADER_LOADED';
+    BdvEngine.MESSAGE_ASSET_LOADER_LOADED = "MESSAGE_ASSET_LOADER_LOADED";
     class AssetManager {
         constructor() { }
         static init() {
-            AssetManager.loaders.push(new BdvEngine.ImageLoader());
+            AssetManager.loaders.push(new BdvEngine.ImageAssetLoader());
+            AssetManager.loaders.push(new BdvEngine.JsonAssetLoader());
         }
         static register(loader) {
             AssetManager.loaders.push(loader);
@@ -62,9 +63,9 @@ var BdvEngine;
             BdvEngine.Message.send(`${BdvEngine.MESSAGE_ASSET_LOADER_LOADED}::${asset.name}`, this, asset);
         }
         static loadAsset(assetName) {
-            let ext = assetName.split('.').pop().toLowerCase();
+            let ext = assetName.split(".").pop().toLowerCase();
             for (let loader of AssetManager.loaders) {
-                if (loader.fileExt.indexOf(ext) !== -1) {
+                if (loader.supportedExtensions.indexOf(ext) !== -1) {
                     loader.loadAsset(assetName);
                     return;
                 }
@@ -102,25 +103,126 @@ var BdvEngine;
         }
     }
     BdvEngine.ImageAsset = ImageAsset;
-})(BdvEngine || (BdvEngine = {}));
-var BdvEngine;
-(function (BdvEngine) {
-    class ImageLoader {
-        get fileExt() {
-            return ['png', 'gif', 'jpg'];
+    class ImageAssetLoader {
+        get supportedExtensions() {
+            return ["png", "gif", "jpg"];
         }
         loadAsset(assetName) {
-            let img = new Image();
-            img.onload = this.onLoaded.bind(this, assetName, img);
-            img.src = assetName;
+            let image = new Image();
+            image.onload = this.onImageLoaded.bind(this, assetName, image);
+            image.src = assetName;
         }
-        onLoaded(assetName, image) {
-            console.log(`ImageLoader::onLoaded: assetName/image ${assetName}/${image}`);
-            let asset = new BdvEngine.ImageAsset(assetName, image);
+        onImageLoaded(assetName, image) {
+            console.log("onImageLoaded: assetName/image", assetName, image);
+            let asset = new ImageAsset(assetName, image);
             BdvEngine.AssetManager.onLoaded(asset);
         }
     }
-    BdvEngine.ImageLoader = ImageLoader;
+    BdvEngine.ImageAssetLoader = ImageAssetLoader;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class JsonAsset {
+        constructor(name, data) {
+            this.name = name;
+            this.data = data;
+        }
+    }
+    BdvEngine.JsonAsset = JsonAsset;
+    class JsonAssetLoader {
+        get supportedExtensions() {
+            return ["json"];
+        }
+        loadAsset(assetName) {
+            let request = new XMLHttpRequest();
+            request.open("GET", assetName);
+            request.addEventListener("load", this.onJsonLoaded.bind(this, assetName, request));
+            request.send();
+        }
+        onJsonLoaded(assetName, request) {
+            console.log("onJsonLoaded: assetName/request", assetName, request);
+            if (request.readyState === request.DONE) {
+                let json = JSON.parse(request.responseText);
+                let asset = new JsonAsset(assetName, json);
+                BdvEngine.AssetManager.onLoaded(asset);
+            }
+        }
+    }
+    BdvEngine.JsonAssetLoader = JsonAssetLoader;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class BaseBehavior {
+        constructor(data) {
+            this._data = data;
+            this.name = this._data.name;
+        }
+        setOwner(owner) {
+            this._owner = owner;
+        }
+        update(time) { }
+        apply(userData) { }
+    }
+    BdvEngine.BaseBehavior = BaseBehavior;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class BehaviorManager {
+        static registerBuilder(builder) {
+            BehaviorManager.registeredBuilders[builder.type] = builder;
+        }
+        static extractBehavior(json) {
+            if (json.type !== undefined) {
+                if (BehaviorManager.registeredBuilders[String(json.type)] !== undefined) {
+                    return BehaviorManager.registeredBuilders[String(json.type)].buildFromJson(json);
+                }
+                throw new Error("BehaviorManager::Behavior manager error - type is missing or builder is not registered for this type.");
+            }
+        }
+    }
+    BehaviorManager.registeredBuilders = {};
+    BdvEngine.BehaviorManager = BehaviorManager;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class RotationBehaviorData {
+        constructor() {
+            this.rotation = BdvEngine.vec3.zero;
+        }
+        setFromJson(json) {
+            if (json.name === undefined) {
+                throw new Error("Name must be defined in behavior data.");
+            }
+            this.name = String(json.name);
+            if (json.rotation !== undefined) {
+                this.rotation.setFromJson(json.rotation);
+            }
+        }
+    }
+    BdvEngine.RotationBehaviorData = RotationBehaviorData;
+    class RotationBehaviorBuilder {
+        get type() {
+            return "rotation";
+        }
+        buildFromJson(json) {
+            let data = new RotationBehaviorData();
+            data.setFromJson(json);
+            return new RotationBehavior(data);
+        }
+    }
+    BdvEngine.RotationBehaviorBuilder = RotationBehaviorBuilder;
+    class RotationBehavior extends BdvEngine.BaseBehavior {
+        constructor(data) {
+            super(data);
+            this.rotation = data.rotation;
+        }
+        update(time) {
+            this._owner.transform.rotation.add(this.rotation);
+            super.update(time);
+        }
+    }
+    BdvEngine.RotationBehavior = RotationBehavior;
+    BdvEngine.BehaviorManager.registerBuilder(new RotationBehaviorBuilder());
 })(BdvEngine || (BdvEngine = {}));
 var BdvEngine;
 (function (BdvEngine) {
@@ -217,8 +319,9 @@ var BdvEngine;
 var BdvEngine;
 (function (BdvEngine) {
     class BaseComponent {
-        constructor(name) {
-            this.name = name;
+        constructor(data) {
+            this.data = data;
+            this.name = data.name;
         }
         setOwner(owner) {
             this.owner = owner;
@@ -235,10 +338,50 @@ var BdvEngine;
 })(BdvEngine || (BdvEngine = {}));
 var BdvEngine;
 (function (BdvEngine) {
+    class ComponentManager {
+        static registerBuilder(builder) {
+            ComponentManager.registeredBuilders[builder.type] = builder;
+        }
+        static extractComponent(json) {
+            if (json.type !== undefined) {
+                if (ComponentManager.registeredBuilders[String(json.type)] !== undefined) {
+                    return ComponentManager.registeredBuilders[String(json.type)].buildFromJson(json);
+                }
+                throw new Error("Component manager error - type is missing or builder is not registered for this type.");
+            }
+        }
+    }
+    ComponentManager.registeredBuilders = {};
+    BdvEngine.ComponentManager = ComponentManager;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class SpriteComponentData {
+        setFromJson(json) {
+            if (json.name !== undefined) {
+                this.name = String(json.name);
+            }
+            if (json.materialName !== undefined) {
+                this.materialName = String(json.materialName);
+            }
+        }
+    }
+    BdvEngine.SpriteComponentData = SpriteComponentData;
+    class SpriteComponentBuilder {
+        get type() {
+            return "sprite";
+        }
+        buildFromJson(json) {
+            let data = new SpriteComponentData();
+            data.setFromJson(json);
+            return new SpriteComponent(data);
+        }
+    }
+    BdvEngine.SpriteComponentBuilder = SpriteComponentBuilder;
     class SpriteComponent extends BdvEngine.BaseComponent {
-        constructor(name, materialName) {
-            super(name);
-            this.sprite = new BdvEngine.Sprite(name, materialName);
+        constructor(data) {
+            super(data);
+            this.sprite = new BdvEngine.Sprite(this.name, data.materialName);
         }
         load() {
             this.sprite.load();
@@ -249,6 +392,7 @@ var BdvEngine;
         }
     }
     BdvEngine.SpriteComponent = SpriteComponent;
+    BdvEngine.ComponentManager.registerBuilder(new SpriteComponentBuilder());
 })(BdvEngine || (BdvEngine = {}));
 var BdvEngine;
 (function (BdvEngine) {
@@ -315,7 +459,7 @@ var BdvEngine;
             for (let attr of this.attrInfo) {
                 BdvEngine.gl.disableVertexAttribArray(attr.location);
             }
-            BdvEngine.gl.bindBuffer(BdvEngine.gl.ARRAY_BUFFER, this.buffer);
+            BdvEngine.gl.bindBuffer(this.targetBufferType, undefined);
         }
         addAttrLocation(info) {
             this.hasAttrLocation = true;
@@ -997,6 +1141,17 @@ var BdvEngine;
             let scale = BdvEngine.m4x4.scale(this.scale);
             return BdvEngine.m4x4.multiply(BdvEngine.m4x4.multiply(translation, rotation), scale);
         }
+        setFromJson(json) {
+            if (json.position !== undefined) {
+                this.position.setFromJson(json.position);
+            }
+            if (json.rotation !== undefined) {
+                this.rotation.setFromJson(json.rotation);
+            }
+            if (json.scale !== undefined) {
+                this.scale.setFromJson(json.scale);
+            }
+        }
     }
     BdvEngine.transform = transform;
 })(BdvEngine || (BdvEngine = {}));
@@ -1018,6 +1173,14 @@ var BdvEngine;
         }
         set vy(point) {
             this.y = point;
+        }
+        setFromJson(json) {
+            if (json.x !== undefined) {
+                this.x = Number(json.x);
+            }
+            if (json.y !== undefined) {
+                this.y = Number(json.y);
+            }
         }
         toArray() {
             return [this.x, this.y];
@@ -1054,6 +1217,30 @@ var BdvEngine;
         set vz(point) {
             this.z = point;
         }
+        add(v) {
+            this.x += v.x;
+            this.y += v.y;
+            this.z += v.z;
+            return this;
+        }
+        subtract(v) {
+            this.x -= v.x;
+            this.y -= v.y;
+            this.z -= v.z;
+            return this;
+        }
+        multiply(v) {
+            this.x *= v.x;
+            this.y *= v.y;
+            this.z *= v.z;
+            return this;
+        }
+        divide(v) {
+            this.x /= v.x;
+            this.y /= v.y;
+            this.z /= v.z;
+            return this;
+        }
         copyFrom(vec) {
             this.x = vec.x;
             this.y = vec.y;
@@ -1070,6 +1257,17 @@ var BdvEngine;
         }
         static get one() {
             return new vec3(1, 1, 1);
+        }
+        setFromJson(json) {
+            if (json.x !== undefined) {
+                this.x = Number(json.x);
+            }
+            if (json.y !== undefined) {
+                this.y = Number(json.y);
+            }
+            if (json.z !== undefined) {
+                this.z = Number(json.z);
+            }
         }
     }
     BdvEngine.vec3 = vec3;
@@ -1114,6 +1312,7 @@ var BdvEngine;
             this.children = [];
             this.isLoaded = false;
             this.components = [];
+            this.behaviors = [];
             this.localMatrix = BdvEngine.m4x4.identity();
             this.worldMatrix = BdvEngine.m4x4.identity();
             this.transform = new BdvEngine.transform();
@@ -1178,6 +1377,10 @@ var BdvEngine;
             this.components.push(component);
             component.setOwner(this);
         }
+        addBehavior(behavior) {
+            this.behaviors.push(behavior);
+            behavior.setOwner(this);
+        }
         load() {
             this.isLoaded = true;
             for (let component of this.components) {
@@ -1192,6 +1395,9 @@ var BdvEngine;
             this.updateWorldMatrix(this.parent ? this.parent.getWorldMatrix : undefined);
             for (let component of this.components) {
                 component.update(deltaTime);
+            }
+            for (let b of this.behaviors) {
+                b.update(deltaTime);
             }
             for (let child of this.children) {
                 child.update(deltaTime);
@@ -1219,10 +1425,54 @@ var BdvEngine;
     class Zone {
         constructor(id, name, description) {
             this.state = ZoneState.UNINITIALIZED;
+            this.globalId = -1;
             this.id = id;
             this.name = name;
             this.description = description;
             this.scene = new BdvEngine.Scene();
+        }
+        initialize(zoneData) {
+            if (zoneData.objects === undefined) {
+                throw new Error("Zone initialization error: objects not present.");
+            }
+            for (let o in zoneData.objects) {
+                let obj = zoneData.objects[o];
+                this.loadSimObject(obj, this.scene.getRoot);
+            }
+        }
+        loadSimObject(dataSection, parent) {
+            let name;
+            if (dataSection.name !== undefined) {
+                name = String(dataSection.name);
+            }
+            this.globalId++;
+            let simObject = new BdvEngine.SimObject(this.globalId, name, this.scene);
+            if (dataSection.transform !== undefined) {
+                simObject.transform.setFromJson(dataSection.transform);
+            }
+            if (dataSection.components !== undefined) {
+                for (let c in dataSection.components) {
+                    let data = dataSection.components[c];
+                    let component = BdvEngine.ComponentManager.extractComponent(data);
+                    simObject.addComponent(component);
+                }
+            }
+            if (dataSection.behaviors !== undefined) {
+                for (let b in dataSection.behaviors) {
+                    let data = dataSection.behaviors[b];
+                    let behavior = BdvEngine.BehaviorManager.extractBehavior(data);
+                    simObject.addBehavior(behavior);
+                }
+            }
+            if (dataSection.children !== undefined) {
+                for (let o in dataSection.children) {
+                    let obj = dataSection.children[o];
+                    this.loadSimObject(obj, simObject);
+                }
+            }
+            if (parent !== undefined) {
+                parent.addChild(simObject);
+            }
         }
         get getId() {
             return this.id;
@@ -1263,26 +1513,30 @@ var BdvEngine;
 (function (BdvEngine) {
     class ZoneManager {
         constructor() { }
-        static createZone(name, description) {
-            ZoneManager.globalZoneId++;
-            let zone = new BdvEngine.Zone(ZoneManager.globalZoneId, name, description);
-            ZoneManager.zones[ZoneManager.globalZoneId] = zone;
-            return ZoneManager.globalZoneId;
-        }
-        static createTestZone() {
-            ZoneManager.globalZoneId++;
-            ZoneManager.zones[ZoneManager.globalZoneId] = new BdvEngine.ZoneTest(ZoneManager.globalZoneId, 'test', 'simple test zone');
-            return ZoneManager.globalZoneId;
+        static init() {
+            ZoneManager.instance = new ZoneManager();
+            ZoneManager.registeredZones[0] = "assets/zones/testZone.json";
         }
         static changeZone(zoneId) {
             if (ZoneManager.currentZone) {
                 ZoneManager.currentZone.onDeactivate();
                 ZoneManager.currentZone.unload();
+                ZoneManager.currentZone = undefined;
             }
-            if (ZoneManager.zones[zoneId]) {
-                ZoneManager.currentZone = ZoneManager.zones[zoneId];
-                ZoneManager.currentZone.onActivate();
-                ZoneManager.currentZone.load();
+            if (ZoneManager.registeredZones[zoneId] !== undefined) {
+                if (BdvEngine.AssetManager.isLoaded(ZoneManager.registeredZones[zoneId])) {
+                    let asset = BdvEngine.AssetManager.get(ZoneManager.registeredZones[zoneId]);
+                    ZoneManager.loadZone(asset);
+                }
+                else {
+                    BdvEngine.Message.subscribe(BdvEngine.MESSAGE_ASSET_LOADER_LOADED +
+                        "::" +
+                        ZoneManager.registeredZones[zoneId], ZoneManager.instance);
+                    BdvEngine.AssetManager.loadAsset(ZoneManager.registeredZones[zoneId]);
+                }
+            }
+            else {
+                throw new Error("Zone id:" + zoneId.toString() + " does not exist.");
             }
         }
         static update(deltaTime) {
@@ -1295,29 +1549,48 @@ var BdvEngine;
                 ZoneManager.currentZone.render(shader);
             }
         }
+        onMessage(message) {
+            if (message.code.indexOf(BdvEngine.MESSAGE_ASSET_LOADER_LOADED) !== -1) {
+                console.log("ZoneManager::Zone loaded:" + message.code);
+                let asset = message.context;
+                ZoneManager.loadZone(asset);
+            }
+        }
+        static loadZone(asset) {
+            console.log("ZoneManager::Loading zone:" + asset.name);
+            let zoneData = asset.data;
+            let zoneId;
+            if (zoneData.id === undefined) {
+                throw new Error("Zone file format exception: Zone id not present.");
+            }
+            else {
+                zoneId = Number(zoneData.id);
+            }
+            let zoneName;
+            if (zoneData.name === undefined) {
+                throw new Error("Zone file format exception: Zone name not present.");
+            }
+            else {
+                zoneName = String(zoneData.name);
+            }
+            let zoneDescription;
+            if (zoneData.description !== undefined) {
+                zoneDescription = String(zoneData.description);
+            }
+            ZoneManager.currentZone = new BdvEngine.Zone(zoneId, zoneName, zoneDescription);
+            ZoneManager.currentZone.initialize(zoneData);
+            ZoneManager.currentZone.onActivate();
+            ZoneManager.currentZone.load();
+        }
     }
     ZoneManager.globalZoneId = -1;
-    ZoneManager.zones = {};
+    ZoneManager.registeredZones = {};
     BdvEngine.ZoneManager = ZoneManager;
 })(BdvEngine || (BdvEngine = {}));
 var BdvEngine;
 (function (BdvEngine) {
     class ZoneTest extends BdvEngine.Zone {
         load() {
-            this.parentObject = new BdvEngine.SimObject(0, 'parentObject');
-            this.parentObject.transform.position.vx = 300;
-            this.parentObject.transform.position.vy = 300;
-            this.parentSprite = new BdvEngine.SpriteComponent('parentSprite', 'block_mat');
-            this.parentObject.addComponent(this.parentSprite);
-            this.testObject = new BdvEngine.SimObject(1, 'testObject');
-            this.testSprite = new BdvEngine.SpriteComponent('testSprite', 'block_mat');
-            this.testObject.addComponent(this.testSprite);
-            this.testObject.transform.position.vx = 120;
-            this.testObject.transform.position.vy = 120;
-            this.parentObject.addChild(this.testObject);
-            this.getScene.addObject(this.parentObject);
-            this.testObject.load();
-            super.load();
         }
         update(deltaTime) {
             this.parentObject.transform.rotation.vz += 0.01;
