@@ -1,7 +1,7 @@
 let engine;
 window.onload = () => {
-    const canvas = document.createElement('canvas');
-    canvas.id = 'mainFrame';
+    const canvas = document.createElement("canvas");
+    canvas.id = "mainFrame";
     document.body.appendChild(canvas);
     engine = new BdvEngine.Engine(canvas);
     engine.start();
@@ -13,20 +13,32 @@ var BdvEngine;
 (function (BdvEngine) {
     class Engine {
         constructor(canvas) {
+            this.previousTime = 0;
             this.canvas = canvas;
         }
         start() {
             BdvEngine.GLUTools.init(this.canvas);
             BdvEngine.AssetManager.init();
+            BdvEngine.InputManager.initialize();
             BdvEngine.ZoneManager.init();
-            BdvEngine.gl.clearColor(0, 0, 0, 1);
+            BdvEngine.Message.subscribe("MOUSE_UP", this);
+            BdvEngine.gl.clearColor(0, 0, 0.3, 1);
+            BdvEngine.gl.enable(BdvEngine.gl.BLEND);
+            BdvEngine.gl.blendFunc(BdvEngine.gl.SRC_ALPHA, BdvEngine.gl.ONE_MINUS_SRC_ALPHA);
             this.defaultShader = new BdvEngine.DefaultShader();
             this.defaultShader.use();
-            BdvEngine.MaterialManager.register(new BdvEngine.Material("block_mat", "assets/textures/block.png", new BdvEngine.Color(0, 128, 255, 255)));
+            BdvEngine.MaterialManager.register(new BdvEngine.Material("block", "assets/textures/block.png", BdvEngine.Color.white()));
+            BdvEngine.MaterialManager.register(new BdvEngine.Material("duck", "assets/textures/duck.png", BdvEngine.Color.white()));
             this.projectionMatrix = BdvEngine.m4x4.ortho(0, this.canvas.width, this.canvas.height, 0, -100.0, 100.0);
             BdvEngine.ZoneManager.changeZone(0);
             this.resize();
             this.loop();
+        }
+        onMessage(message) {
+            if (message.code === "MOUSE_UP") {
+                let context = message.context;
+                document.title = `Pos: [${context.position.vx},${context.position.vy}]`;
+            }
         }
         resize() {
             this.canvas.width = window.innerWidth;
@@ -35,8 +47,17 @@ var BdvEngine;
             this.projectionMatrix = BdvEngine.m4x4.ortho(0, this.canvas.width, this.canvas.height, 0, -100.0, 100.0);
         }
         loop() {
-            BdvEngine.MessageBus.update(0);
-            BdvEngine.ZoneManager.update(0);
+            this.update();
+            this.render();
+        }
+        update() {
+            let delta = performance.now() - this.previousTime;
+            BdvEngine.gl.clear(BdvEngine.gl.COLOR_BUFFER_BIT);
+            BdvEngine.MessageBus.update(delta);
+            BdvEngine.ZoneManager.update(delta);
+            this.previousTime = performance.now();
+        }
+        render() {
             BdvEngine.gl.clear(BdvEngine.gl.COLOR_BUFFER_BIT);
             BdvEngine.ZoneManager.render(this.defaultShader);
             let projectionPosition = this.defaultShader.getUniformLocation("u_proj");
@@ -182,6 +203,59 @@ var BdvEngine;
     }
     BehaviorManager.registeredBuilders = {};
     BdvEngine.BehaviorManager = BehaviorManager;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class KeyboardMovementBehaviorData {
+        constructor() {
+            this.speed = 0.1;
+        }
+        setFromJson(json) {
+            if (json.name === undefined) {
+                throw new Error("Name must be defined in behavior data.");
+            }
+            this.name = String(json.name);
+            if (json.speed !== undefined) {
+                this.speed = Number(json.speed);
+            }
+        }
+    }
+    BdvEngine.KeyboardMovementBehaviorData = KeyboardMovementBehaviorData;
+    class KeyboardMovementBehaviorBuilder {
+        get type() {
+            return "keyboardMovement";
+        }
+        buildFromJson(json) {
+            let data = new KeyboardMovementBehaviorData();
+            data.setFromJson(json);
+            return new KeyboardMovementBehavior(data);
+        }
+    }
+    BdvEngine.KeyboardMovementBehaviorBuilder = KeyboardMovementBehaviorBuilder;
+    class KeyboardMovementBehavior extends BdvEngine.BaseBehavior {
+        constructor(data) {
+            super(data);
+            this.speed = 0.1;
+            this.speed = data.speed;
+        }
+        update(time) {
+            if (BdvEngine.InputManager.isKeyDown(BdvEngine.Keys.LEFT)) {
+                this._owner.transform.position.vx -= this.speed;
+            }
+            if (BdvEngine.InputManager.isKeyDown(BdvEngine.Keys.RIGHT)) {
+                this._owner.transform.position.vx += this.speed;
+            }
+            if (BdvEngine.InputManager.isKeyDown(BdvEngine.Keys.UP)) {
+                this._owner.transform.position.vy -= this.speed;
+            }
+            if (BdvEngine.InputManager.isKeyDown(BdvEngine.Keys.DOWN)) {
+                this._owner.transform.position.vy += this.speed;
+            }
+            super.update(time);
+        }
+    }
+    BdvEngine.KeyboardMovementBehavior = KeyboardMovementBehavior;
+    BdvEngine.BehaviorManager.registerBuilder(new KeyboardMovementBehaviorBuilder());
 })(BdvEngine || (BdvEngine = {}));
 var BdvEngine;
 (function (BdvEngine) {
@@ -396,9 +470,234 @@ var BdvEngine;
 })(BdvEngine || (BdvEngine = {}));
 var BdvEngine;
 (function (BdvEngine) {
+    class Sprite {
+        constructor(name, materialName, width = 100, height = 100) {
+            this.vertices = [];
+            this.name = name;
+            this.width = width;
+            this.height = height;
+            this.materialName = materialName;
+            this.material = BdvEngine.MaterialManager.get(this.materialName);
+        }
+        destructor() {
+            this.buffer.destroy();
+            BdvEngine.MaterialManager.flush(this.materialName);
+            this.material = undefined;
+            this.materialName = undefined;
+        }
+        get getName() {
+            return this.name;
+        }
+        load() {
+            this.buffer = new BdvEngine.glBuffer();
+            let positionAttr = new BdvEngine.glAttrInfo();
+            positionAttr.location = 0;
+            positionAttr.size = 3;
+            this.buffer.addAttrLocation(positionAttr);
+            let textCoordAttr = new BdvEngine.glAttrInfo();
+            textCoordAttr.location = 1;
+            textCoordAttr.size = 2;
+            this.buffer.addAttrLocation(textCoordAttr);
+            this.vertices =
+                [
+                    new BdvEngine.Vertex(0, 0, 0, 0, 0),
+                    new BdvEngine.Vertex(0, this.height, 0, 0, 1.0),
+                    new BdvEngine.Vertex(this.width, this.height, 0, 1.0, 1.0),
+                    new BdvEngine.Vertex(this.width, this.height, 0, 1.0, 1.0),
+                    new BdvEngine.Vertex(this.width, 0, 0, 1.0, 0),
+                    new BdvEngine.Vertex(0, 0, 0, 0, 0),
+                ];
+            for (let v of this.vertices) {
+                this.buffer.pushBack(v.toArray());
+            }
+            this.buffer.upload();
+            this.buffer.unbind();
+        }
+        update(tick) { }
+        render(shader, modelMatrix) {
+            const transformLocation = shader.getUniformLocation("u_transf");
+            BdvEngine.gl.uniformMatrix4fv(transformLocation, false, modelMatrix.toFloat32Array());
+            const colorLocation = shader.getUniformLocation("u_color");
+            BdvEngine.gl.uniform4fv(colorLocation, this.material.diffColor.toArrayFloat32());
+            if (this.material.diffTexture) {
+                this.material.diffTexture.activate(0);
+                const diffuseLocation = shader.getUniformLocation("u_diffuse");
+                BdvEngine.gl.uniform1i(diffuseLocation, 0);
+            }
+            this.buffer.bind();
+            this.buffer.draw();
+        }
+    }
+    BdvEngine.Sprite = Sprite;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class UVInfo {
+        constructor(min, max) {
+            this.min = min;
+            this.max = max;
+        }
+    }
+    class AnimatedSprite extends BdvEngine.Sprite {
+        constructor(name, materialName, width = 100, height = 100, frameWidth = 10, frameHeight = 10, frameCount = 1, frameSequence = []) {
+            super(name, materialName, width, height);
+            this._frameTime = 333;
+            this._frameUVs = [];
+            this._currentFrame = 0;
+            this._currentTime = 0;
+            this._assetLoaded = false;
+            this._assetWidth = 2;
+            this._assetHeight = 2;
+            this._frameWidth = frameWidth;
+            this._frameHeight = frameHeight;
+            this._frameCount = frameCount;
+            this._frameSequence = frameSequence;
+            BdvEngine.Message.subscribe(`${BdvEngine.MESSAGE_ASSET_LOADER_LOADED}::${this.material.diffTextureName}`, this);
+            let asset = BdvEngine.AssetManager.get(this.material.diffTextureName);
+            if (asset) {
+                this._assetLoaded = true;
+                this._assetWidth = asset.width;
+                this._assetHeight = asset.height;
+                this.calculateUVs();
+            }
+        }
+        destructor() {
+            super.destructor();
+        }
+        onMessage(message) {
+            if (message.code ===
+                `${BdvEngine.MESSAGE_ASSET_LOADER_LOADED}::${this.material.diffTextureName}`) {
+                this._assetLoaded = true;
+                let asset = message.context;
+                this._assetHeight = asset.height;
+                this._assetWidth = asset.width;
+                this.calculateUVs();
+            }
+        }
+        load() {
+            super.load();
+        }
+        update(time) {
+            if (!this._assetLoaded) {
+                return;
+            }
+            this._currentTime += time;
+            if (this._currentTime > this._frameTime) {
+                this._currentFrame++;
+                this._currentTime = 0;
+                if (this._currentFrame >= this._frameSequence.length) {
+                    this._currentFrame = 0;
+                }
+                let frameUVs = this._frameSequence[this._currentFrame];
+                this.vertices[0].texCoords.copyFrom(this._frameUVs[frameUVs].min);
+                this.vertices[1].texCoords = new BdvEngine.vec2(this._frameUVs[frameUVs].min.vx, this._frameUVs[frameUVs].max.vy);
+                this.vertices[2].texCoords.copyFrom(this._frameUVs[frameUVs].max);
+                this.vertices[3].texCoords.copyFrom(this._frameUVs[frameUVs].max);
+                this.vertices[4].texCoords = new BdvEngine.vec2(this._frameUVs[frameUVs].max.vx, this._frameUVs[frameUVs].min.vy);
+                this.vertices[5].texCoords.copyFrom(this._frameUVs[frameUVs].min);
+                this.buffer.clearData();
+                for (let v of this.vertices) {
+                    this.buffer.pushBack(v.toArray());
+                }
+                this.buffer.upload();
+                this.buffer.unbind();
+            }
+            super.update(time);
+        }
+        calculateUVs() {
+            let totalWidth = 0;
+            let yValue = 0;
+            for (let i = 0; i < this._frameCount; ++i) {
+                totalWidth += this._frameWidth;
+                if (totalWidth > this._assetWidth) {
+                    yValue++;
+                    totalWidth = 0;
+                }
+                console.log("w/h", this._assetWidth, this._assetHeight);
+                let u = (i * this._frameWidth) / this._assetWidth;
+                let v = (yValue * this._frameHeight) / this._assetHeight;
+                let min = new BdvEngine.vec2(u, v);
+                let uMax = (i * this._frameWidth + this._frameWidth) / this._assetWidth;
+                let vMax = (yValue * this._frameHeight + this._frameHeight) / this._assetHeight;
+                let max = new BdvEngine.vec2(uMax, vMax);
+                this._frameUVs.push(new UVInfo(min, max));
+            }
+        }
+    }
+    BdvEngine.AnimatedSprite = AnimatedSprite;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class AnimatedSpriteComponentData extends BdvEngine.SpriteComponentData {
+        constructor() {
+            super(...arguments);
+            this.frameSequence = [];
+        }
+        setFromJson(json) {
+            super.setFromJson(json);
+            if (json.frameWidth === undefined) {
+                throw new Error("AnimatedSpriteComponentData requires 'frameWidth' to be defined.");
+            }
+            else {
+                this.frameWidth = Number(json.frameWidth);
+            }
+            if (json.frameHeight === undefined) {
+                throw new Error("AnimatedSpriteComponentData requires 'frameHeight' to be defined.");
+            }
+            else {
+                this.frameHeight = Number(json.frameHeight);
+            }
+            if (json.frameCount === undefined) {
+                throw new Error("AnimatedSpriteComponentData requires 'frameCount' to be defined.");
+            }
+            else {
+                this.frameCount = Number(json.frameCount);
+            }
+            if (json.frameSequence === undefined) {
+                throw new Error("AnimatedSpriteComponentData requires 'frameSequence' to be defined.");
+            }
+            else {
+                this.frameSequence = json.frameSequence;
+            }
+        }
+    }
+    BdvEngine.AnimatedSpriteComponentData = AnimatedSpriteComponentData;
+    class AnimatedSpriteComponentBuilder {
+        get type() {
+            return "animatedSprite";
+        }
+        buildFromJson(json) {
+            let data = new AnimatedSpriteComponentData();
+            data.setFromJson(json);
+            return new AnimatedSpriteComponent(data);
+        }
+    }
+    BdvEngine.AnimatedSpriteComponentBuilder = AnimatedSpriteComponentBuilder;
+    class AnimatedSpriteComponent extends BdvEngine.BaseComponent {
+        constructor(data) {
+            super(data);
+            this.sprite = new BdvEngine.AnimatedSprite(this.name, data.materialName, data.frameWidth, data.frameHeight, data.frameWidth, data.frameHeight, data.frameCount, data.frameSequence);
+        }
+        load() {
+            this.sprite.load();
+        }
+        update(time) {
+            this.sprite.update(time);
+            super.update(time);
+        }
+        render(shader) {
+            this.sprite.render(shader, this.getOwner.getWorldMatrix);
+            super.render(shader);
+        }
+    }
+    BdvEngine.AnimatedSpriteComponent = AnimatedSpriteComponent;
+    BdvEngine.ComponentManager.registerBuilder(new AnimatedSpriteComponentBuilder());
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
     class GLUTools {
         static init(canvas) {
-            BdvEngine.gl = canvas.getContext('webgl');
+            BdvEngine.gl = canvas.getContext("webgl");
             if (!BdvEngine.gl)
                 throw new Error(`Unable to initialize WebGL.`);
         }
@@ -408,14 +707,17 @@ var BdvEngine;
 var BdvEngine;
 (function (BdvEngine) {
     class glAttrInfo {
+        constructor() {
+            this.offset = 0;
+        }
     }
     BdvEngine.glAttrInfo = glAttrInfo;
     class glBuffer {
-        constructor(elementSize, dataType = BdvEngine.gl.FLOAT, targetBufferType = BdvEngine.gl.ARRAY_BUFFER, mode = BdvEngine.gl.TRIANGLES) {
+        constructor(dataType = BdvEngine.gl.FLOAT, targetBufferType = BdvEngine.gl.ARRAY_BUFFER, mode = BdvEngine.gl.TRIANGLES) {
             this.hasAttrLocation = false;
             this.data = [];
             this.attrInfo = [];
-            this.elementSize = elementSize;
+            this.elementSize = 0;
             this.type = dataType;
             this.targetBufferType = targetBufferType;
             this.mode = mode;
@@ -440,7 +742,6 @@ var BdvEngine;
                     throw new Error(`Unable to determine byte size for type ${this.type}.`);
                 }
             }
-            this.stride = this.elementSize * this.typeSize;
             this.buffer = BdvEngine.gl.createBuffer();
         }
         destroy() {
@@ -463,7 +764,17 @@ var BdvEngine;
         }
         addAttrLocation(info) {
             this.hasAttrLocation = true;
+            info.offset = this.elementSize;
             this.attrInfo.push(info);
+            this.elementSize += info.size;
+            this.stride = this.elementSize * this.typeSize;
+        }
+        setData(data) {
+            this.clearData();
+            this.pushBack(data);
+        }
+        clearData() {
+            this.data.length = 0;
         }
         pushBack(data) {
             for (let each of data) {
@@ -555,7 +866,7 @@ var BdvEngine;
             BdvEngine.gl.shaderSource(shader, source);
             BdvEngine.gl.compileShader(shader);
             let error = BdvEngine.gl.getShaderInfoLog(shader);
-            if (error !== '') {
+            if (error !== "") {
                 throw new Error(`Error while compiling shader program with name ${this.shaderName}: ${error}`);
             }
             return shader;
@@ -566,7 +877,7 @@ var BdvEngine;
             BdvEngine.gl.attachShader(this.program, fragmentShader);
             BdvEngine.gl.linkProgram(this.program);
             let error = BdvEngine.gl.getProgramInfoLog(this.program);
-            if (error !== '') {
+            if (error !== "") {
                 throw new Error(`Error linking shader with name ${this.shaderName}: ${error}`);
             }
         }
@@ -595,7 +906,7 @@ var BdvEngine;
 (function (BdvEngine) {
     class DefaultShader extends BdvEngine.Shader {
         constructor() {
-            super('default');
+            super("default");
             this.load(this.getVertexSource(), this.getFragmentSource());
         }
         getVertexSource() {
@@ -677,7 +988,12 @@ var BdvEngine;
             return [this.red, this.green, this.blue, this.alpha];
         }
         toArrayFloat() {
-            return [this.red / 255.0, this.green / 255.0, this.blue / 255.0, this.alpha / 255.0];
+            return [
+                this.red / 255.0,
+                this.green / 255.0,
+                this.blue / 255.0,
+                this.alpha / 255.0,
+            ];
         }
         toArrayFloat32() {
             return new Float32Array(this.toArrayFloat());
@@ -785,90 +1101,6 @@ var BdvEngine;
 })(BdvEngine || (BdvEngine = {}));
 var BdvEngine;
 (function (BdvEngine) {
-    class Sprite {
-        constructor(name, materialName, width = 100, height = 100) {
-            this.name = name;
-            this.width = width;
-            this.height = height;
-            this.materialName = materialName;
-            this.material = BdvEngine.MaterialManager.get(this.materialName);
-        }
-        destructor() {
-            this.buffer.destroy();
-            BdvEngine.MaterialManager.flush(this.materialName);
-            this.material = undefined;
-            this.materialName = undefined;
-        }
-        get getName() {
-            return this.name;
-        }
-        load() {
-            this.buffer = new BdvEngine.glBuffer(5);
-            let positionAttr = new BdvEngine.glAttrInfo();
-            positionAttr.location = 0;
-            positionAttr.offset = 0;
-            positionAttr.size = 3;
-            this.buffer.addAttrLocation(positionAttr);
-            let textCoordAttr = new BdvEngine.glAttrInfo();
-            textCoordAttr.location = 1;
-            textCoordAttr.offset = 3;
-            textCoordAttr.size = 2;
-            this.buffer.addAttrLocation(textCoordAttr);
-            let vertices = [
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                this.height,
-                0,
-                0,
-                1.0,
-                this.width,
-                this.height,
-                0,
-                1.0,
-                1.0,
-                this.width,
-                this.height,
-                0,
-                1.0,
-                1.0,
-                this.width,
-                0,
-                0,
-                1.0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-            ];
-            this.buffer.pushBack(vertices);
-            this.buffer.upload();
-            this.buffer.unbind();
-        }
-        update(tick) { }
-        render(shader, modelMatrix) {
-            const transformLocation = shader.getUniformLocation('u_transf');
-            BdvEngine.gl.uniformMatrix4fv(transformLocation, false, modelMatrix.toFloat32Array());
-            const colorLocation = shader.getUniformLocation('u_color');
-            BdvEngine.gl.uniform4fv(colorLocation, this.material.diffColor.toArrayFloat32());
-            if (this.material.diffTexture) {
-                this.material.diffTexture.activate(0);
-                const diffuseLocation = shader.getUniformLocation('u_diffuse');
-                BdvEngine.gl.uniform1i(diffuseLocation, 0);
-            }
-            this.buffer.bind();
-            this.buffer.draw();
-        }
-    }
-    BdvEngine.Sprite = Sprite;
-})(BdvEngine || (BdvEngine = {}));
-var BdvEngine;
-(function (BdvEngine) {
     const LEVEL = 0;
     const BORDER = 0;
     const TEMP_IMAGE_DATA = new Uint8Array([255, 255, 255, 255]);
@@ -929,8 +1161,9 @@ var BdvEngine;
             else {
                 BdvEngine.gl.texParameteri(BdvEngine.gl.TEXTURE_2D, BdvEngine.gl.TEXTURE_WRAP_S, BdvEngine.gl.CLAMP_TO_EDGE);
                 BdvEngine.gl.texParameteri(BdvEngine.gl.TEXTURE_2D, BdvEngine.gl.TEXTURE_WRAP_T, BdvEngine.gl.CLAMP_TO_EDGE);
-                BdvEngine.gl.texParameteri(BdvEngine.gl.TEXTURE_2D, BdvEngine.gl.TEXTURE_MIN_FILTER, BdvEngine.gl.LINEAR);
             }
+            BdvEngine.gl.texParameteri(BdvEngine.gl.TEXTURE_2D, BdvEngine.gl.TEXTURE_MIN_FILTER, BdvEngine.gl.NEAREST);
+            BdvEngine.gl.texParameteri(BdvEngine.gl.TEXTURE_2D, BdvEngine.gl.TEXTURE_MAG_FILTER, BdvEngine.gl.NEAREST);
             this.isLoaded = true;
         }
         isPow2() {
@@ -982,6 +1215,106 @@ var BdvEngine;
         }
     }
     BdvEngine.TextureNode = TextureNode;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    class Vertex {
+        constructor(x = 0, y = 0, z = 0, tu = 0, tv = 0) {
+            this.position = BdvEngine.vec3.zero;
+            this.texCoords = BdvEngine.vec2.zero;
+            this.position.vx = x;
+            this.position.vy = y;
+            this.position.vz = z;
+            this.texCoords.vx = tu;
+            this.texCoords.vy = tv;
+        }
+        toArray() {
+            let array = [];
+            array = array.concat(this.position.toArray());
+            array = array.concat(this.texCoords.toArray());
+            return array;
+        }
+        toFloat32Array() {
+            return new Float32Array(this.toArray());
+        }
+    }
+    BdvEngine.Vertex = Vertex;
+})(BdvEngine || (BdvEngine = {}));
+var BdvEngine;
+(function (BdvEngine) {
+    let Keys;
+    (function (Keys) {
+        Keys[Keys["LEFT"] = 37] = "LEFT";
+        Keys[Keys["UP"] = 38] = "UP";
+        Keys[Keys["RIGHT"] = 39] = "RIGHT";
+        Keys[Keys["DOWN"] = 40] = "DOWN";
+    })(Keys = BdvEngine.Keys || (BdvEngine.Keys = {}));
+    class MouseContext {
+        constructor(leftDown, rightDown, position) {
+            this.leftDown = leftDown;
+            this.rightDown = rightDown;
+            this.position = position;
+        }
+    }
+    BdvEngine.MouseContext = MouseContext;
+    class InputManager {
+        static initialize() {
+            for (let i = 0; i < 255; ++i) {
+                InputManager._keys[i] = false;
+            }
+            window.addEventListener("keydown", InputManager.onKeyDown);
+            window.addEventListener("keyup", InputManager.onKeyUp);
+            window.addEventListener("mousemove", InputManager.onMouseMove);
+            window.addEventListener("mousedown", InputManager.onMouseDown);
+            window.addEventListener("mouseup", InputManager.onMouseUp);
+        }
+        static isKeyDown(key) {
+            return InputManager._keys[key];
+        }
+        static getMousePosition() {
+            return new BdvEngine.vec2(this._mouseX, this._mouseY);
+        }
+        static onKeyDown(event) {
+            InputManager._keys[event.keyCode] = true;
+            event.preventDefault();
+            event.stopPropagation();
+            return false;
+        }
+        static onKeyUp(event) {
+            InputManager._keys[event.keyCode] = false;
+            event.preventDefault();
+            event.stopPropagation();
+            return false;
+        }
+        static onMouseMove(event) {
+            InputManager._previousMouseX = InputManager._mouseX;
+            InputManager._previousMouseY = InputManager._mouseY;
+            InputManager._mouseX = event.clientX;
+            InputManager._mouseY = event.clientY;
+        }
+        static onMouseDown(event) {
+            if (event.button === 0) {
+                InputManager._leftDown = true;
+            }
+            else if (event.button === 2) {
+                InputManager._rightDown = true;
+            }
+            BdvEngine.Message.send("MOUSE_DOWN", InputManager, new MouseContext(InputManager._leftDown, InputManager._rightDown, InputManager.getMousePosition()));
+        }
+        static onMouseUp(event) {
+            if (event.button === 0) {
+                InputManager._leftDown = false;
+            }
+            else if (event.button === 2) {
+                InputManager._rightDown = false;
+            }
+            BdvEngine.Message.send("MOUSE_UP", InputManager, new MouseContext(InputManager._leftDown, InputManager._rightDown, InputManager.getMousePosition()));
+        }
+    }
+    InputManager._keys = [];
+    InputManager._leftDown = false;
+    InputManager._rightDown = false;
+    BdvEngine.InputManager = InputManager;
 })(BdvEngine || (BdvEngine = {}));
 var BdvEngine;
 (function (BdvEngine) {
@@ -1173,6 +1506,16 @@ var BdvEngine;
         }
         set vy(point) {
             this.y = point;
+        }
+        static get zero() {
+            return new vec2();
+        }
+        static get one() {
+            return new vec2(1, 1);
+        }
+        copyFrom(v) {
+            this.x = v.x;
+            this.y = v.y;
         }
         setFromJson(json) {
             if (json.x !== undefined) {

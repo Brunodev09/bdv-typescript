@@ -24,6 +24,19 @@ namespace BdvEngine {
       this.y = point;
     }
 
+    public static get zero(): vec2 {
+      return new vec2();
+    }
+
+    public static get one(): vec2 {
+      return new vec2(1, 1);
+    }
+
+    public copyFrom(v: vec2): void {
+      this.x = v.x;
+      this.y = v.y;
+    }
+
     public setFromJson(json: any): void {
       if (json.x !== undefined) {
         this.x = Number(json.x);

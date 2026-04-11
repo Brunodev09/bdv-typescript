@@ -1,8 +1,9 @@
 namespace BdvEngine {
-  export class Engine {
+  export class Engine implements IMessageHandler {
     private canvas: HTMLCanvasElement;
     private defaultShader: DefaultShader;
     private projectionMatrix: m4x4;
+    private previousTime: number = 0;
 
     public constructor(canvas: HTMLCanvasElement) {
       this.canvas = canvas;
@@ -12,19 +13,31 @@ namespace BdvEngine {
       GLUTools.init(this.canvas);
 
       AssetManager.init();
+      InputManager.initialize();
       ZoneManager.init();
 
-      gl.clearColor(0, 0, 0, 1);
+      //gl.clearColor(0, 0, 0, 1);
+      Message.subscribe("MOUSE_UP", this);
+
+      gl.clearColor(0, 0, 0.3, 1);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
       this.defaultShader = new DefaultShader();
       this.defaultShader.use();
 
+      // MaterialManager.register(
+      //   new Material(
+      //     "block_mat",
+      //     "assets/textures/block.png",
+      //     new Color(0, 128, 255, 255),
+      //   ),
+      // );
       MaterialManager.register(
-        new Material(
-          "block_mat",
-          "assets/textures/block.png",
-          new Color(0, 128, 255, 255),
-        ),
+        new Material("block", "assets/textures/block.png", Color.white()),
+      );
+      MaterialManager.register(
+        new Material("duck", "assets/textures/duck.png", Color.white()),
       );
 
       this.projectionMatrix = m4x4.ortho(
@@ -40,6 +53,13 @@ namespace BdvEngine {
 
       this.resize();
       this.loop();
+    }
+
+    public onMessage(message: Message): void {
+      if (message.code === "MOUSE_UP") {
+        let context = message.context as MouseContext;
+        document.title = `Pos: [${context.position.vx},${context.position.vy}]`;
+      }
     }
 
     public resize(): void {
@@ -58,10 +78,21 @@ namespace BdvEngine {
     }
 
     private loop(): void {
-      MessageBus.update(0);
+      this.update();
+      this.render();
+    }
 
-      ZoneManager.update(0);
+    private update(): void {
+      let delta = performance.now() - this.previousTime;
 
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      MessageBus.update(delta);
+      ZoneManager.update(delta);
+
+      this.previousTime = performance.now();
+    }
+
+    private render(): void {
       gl.clear(gl.COLOR_BUFFER_BIT);
 
       ZoneManager.render(this.defaultShader);

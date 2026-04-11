@@ -1,13 +1,14 @@
 namespace BdvEngine {
   export class Sprite {
-    private name: string;
-    private width: number;
-    private height: number;
+    protected name: string;
+    protected width: number;
+    protected height: number;
 
-    private buffer: glBuffer;
+    protected buffer: glBuffer;
 
-    private materialName: string;
-    private material: Material;
+    protected materialName: string;
+    protected material: Material;
+    protected vertices: Vertex[] = [];
 
     public constructor(
       name: string,
@@ -34,56 +35,33 @@ namespace BdvEngine {
     }
 
     public load(): void {
-      this.buffer = new glBuffer(5);
+      this.buffer = new glBuffer();
 
       let positionAttr = new glAttrInfo();
       positionAttr.location = 0;
-      positionAttr.offset = 0;
       positionAttr.size = 3;
       this.buffer.addAttrLocation(positionAttr);
 
       let textCoordAttr = new glAttrInfo();
       textCoordAttr.location = 1;
-      textCoordAttr.offset = 3;
       textCoordAttr.size = 2;
       this.buffer.addAttrLocation(textCoordAttr);
 
-      let vertices = [
+      this.vertices =
         // xyz, u,v
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        this.height,
-        0,
-        0,
-        1.0,
-        this.width,
-        this.height,
-        0,
-        1.0,
-        1.0,
+        [
+          new Vertex(0, 0, 0, 0, 0),
+          new Vertex(0, this.height, 0, 0, 1.0),
+          new Vertex(this.width, this.height, 0, 1.0, 1.0),
+          new Vertex(this.width, this.height, 0, 1.0, 1.0),
+          new Vertex(this.width, 0, 0, 1.0, 0),
+          new Vertex(0, 0, 0, 0, 0),
+        ];
 
-        this.width,
-        this.height,
-        0,
-        1.0,
-        1.0,
-        this.width,
-        0,
-        0,
-        1.0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-      ];
+      for (let v of this.vertices) {
+        this.buffer.pushBack(v.toArray());
+      }
 
-      this.buffer.pushBack(vertices);
       this.buffer.upload();
       this.buffer.unbind();
     }

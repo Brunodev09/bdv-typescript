@@ -4,54 +4,33 @@
   "id": 0,
   "objects": [
     {
-      "name": "parentObject",
+      "name": "duck",
       "transform": {
         "position": {
-          "x": 300,
-          "y": 300
+          "x": 100,
+          "y": 100
+        },
+        "scale": {
+          "x": 8,
+          "y": 8
         }
       },
-      "children": [
-        {
-          "name": "testObject",
-          "transform": {
-            "position": {
-              "x": 120,
-              "y": 120
-            }
-          },
-          "components": [
-            {
-              "name": "test",
-              "type": "sprite",
-              "materialName": "block_mat"
-            }
-          ],
-          "behaviors": [
-            {
-              "name": "rotateX",
-              "type": "rotation",
-              "rotation": {
-                "z": 0.01
-              }
-            }
-          ]
-        }
-      ],
       "components": [
         {
-          "name": "test",
-          "type": "sprite",
-          "materialName": "block_mat"
+          "name": "duckAnimatedSprite",
+          "type": "animatedSprite",
+          "materialName": "duck",
+          "frameWidth": 17,
+          "frameHeight": 12,
+          "frameCount": 3,
+          "frameSequence": [0, 1, 2, 1]
         }
       ],
       "behaviors": [
         {
-          "name": "rotateX",
-          "type": "rotation",
-          "rotation": {
-            "z": 0.01
-          }
+          "name": "movementBehavior",
+          "type": "keyboardMovement",
+          "speed": 2.5
         }
       ]
     }
