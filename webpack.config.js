@@ -1,7 +1,9 @@
 const path = require("path");
 
+const entry = process.env.ENTRY === "3d" ? "./example/app3d.ts" : "./example/app.ts";
+
 module.exports = {
-  entry: "./example/app.ts",
+  entry: entry,
   mode: "development",
   devtool: "source-map",
   module: {

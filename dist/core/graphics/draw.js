@@ -5,6 +5,9 @@ export class Draw {
     static setProjection(proj) {
         Draw.projectionMatrix = proj;
     }
+    static getProjection() {
+        return Draw.projectionMatrix;
+    }
     static ensureInit() {
         if (Draw.whiteTexture)
             return;
@@ -18,7 +21,7 @@ export class Draw {
         Draw.batchShader = new BatchColorShader();
     }
     static pushVert(buf, x, y, z, c) {
-        buf.push(x, y, z, 0, 0, c.rFloat, c.gFloat, c.bFloat, c.aFloat);
+        buf.push(x, y, z, c.rFloat, c.gFloat, c.bFloat, c.aFloat);
     }
     static rect(x, y, w, h, color) {
         let b = Draw.triVerts, c = color;
@@ -113,19 +116,15 @@ export class Draw {
     static submitBatch(shader, buffer, verts, mode) {
         gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.DYNAMIC_DRAW);
-        const stride = 9 * 4;
+        const stride = 7 * 4;
         let posLoc = shader.getAttribLocation("a_pos");
         gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, stride, 0);
         gl.enableVertexAttribArray(posLoc);
-        let texLoc = shader.getAttribLocation("a_textCoord");
-        gl.vertexAttribPointer(texLoc, 2, gl.FLOAT, false, stride, 3 * 4);
-        gl.enableVertexAttribArray(texLoc);
         let colLoc = shader.getAttribLocation("a_color");
-        gl.vertexAttribPointer(colLoc, 4, gl.FLOAT, false, stride, 5 * 4);
+        gl.vertexAttribPointer(colLoc, 4, gl.FLOAT, false, stride, 3 * 4);
         gl.enableVertexAttribArray(colLoc);
-        gl.drawArrays(mode, 0, verts.length / 9);
+        gl.drawArrays(mode, 0, verts.length / 7);
         gl.disableVertexAttribArray(posLoc);
-        gl.disableVertexAttribArray(texLoc);
         gl.disableVertexAttribArray(colLoc);
     }
 }
@@ -144,7 +143,6 @@ class BatchColorShader extends Shader {
     vertSrc() {
         return `
       attribute vec3 a_pos;
-      attribute vec2 a_textCoord;
       attribute vec4 a_color;
 
       uniform mat4 u_proj;

@@ -6,6 +6,7 @@ import { Material } from './material';
 import { MaterialManager } from './materialManager';
 import { m4x4 } from '../utils/m4x4';
 import { Draw } from './draw';
+import { SpriteBatcher } from './spriteBatcher';
 
 export class Sprite {
   protected name: string;
@@ -74,8 +75,18 @@ export class Sprite {
     this.buffer.unbind();
   }
 
+  public get hasCustomShader(): boolean {
+    return this.material.hasCustomShader;
+  }
+
+  /** Queue this sprite for batched rendering. */
+  public pushToBatch(worldMatrix: m4x4): void {
+    SpriteBatcher.push(this.vertices, this.material, worldMatrix);
+  }
+
   public update(tick: number): void {}
 
+  /** Direct render (used for custom-shader sprites that can't batch). */
   public render(shader: Shader, modelMatrix: m4x4): void {
     // If the material has a custom shader, switch to it and set projection
     let activeShader = shader;

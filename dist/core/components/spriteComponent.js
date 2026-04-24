@@ -30,7 +30,12 @@ export class SpriteComponent extends BaseComponent {
         this.sprite.load();
     }
     render(shader) {
-        this.sprite.render(shader, this.getOwner.getWorldMatrix);
+        if (this.sprite.hasCustomShader) {
+            this.sprite.render(shader, this.getOwner.getWorldMatrix);
+        }
+        else {
+            this.sprite.pushToBatch(this.getOwner.getWorldMatrix);
+        }
         super.render(shader);
     }
 }

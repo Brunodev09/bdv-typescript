@@ -2,6 +2,8 @@ import { gl } from '../gl/gl';
 import { glBuffer, glAttrInfo } from '../gl/glBuffer';
 import { Vertex } from './vertex';
 import { MaterialManager } from './materialManager';
+import { Draw } from './draw';
+import { SpriteBatcher } from './spriteBatcher';
 export class Sprite {
     constructor(name, materialName, width = 100, height = 100) {
         this.vertices = [];
@@ -45,19 +47,36 @@ export class Sprite {
         this.buffer.upload();
         this.buffer.unbind();
     }
+    get hasCustomShader() {
+        return this.material.hasCustomShader;
+    }
+    pushToBatch(worldMatrix) {
+        SpriteBatcher.push(this.vertices, this.material, worldMatrix);
+    }
     update(tick) { }
     render(shader, modelMatrix) {
-        const transformLocation = shader.getUniformLocation("u_transf");
+        let activeShader = shader;
+        if (this.material.hasCustomShader) {
+            activeShader = this.material.shader;
+            activeShader.use();
+            const projLoc = activeShader.getUniformLocation("u_proj");
+            gl.uniformMatrix4fv(projLoc, false, new Float32Array(Draw.getProjection().mData));
+        }
+        const transformLocation = activeShader.getUniformLocation("u_transf");
         gl.uniformMatrix4fv(transformLocation, false, modelMatrix.toFloat32Array());
-        const colorLocation = shader.getUniformLocation("u_color");
+        const colorLocation = activeShader.getUniformLocation("u_color");
         gl.uniform4fv(colorLocation, this.material.diffColor.toArrayFloat32());
         if (this.material.diffTexture) {
             this.material.diffTexture.activate(0);
-            const diffuseLocation = shader.getUniformLocation("u_diffuse");
+            const diffuseLocation = activeShader.getUniformLocation("u_diffuse");
             gl.uniform1i(diffuseLocation, 0);
         }
+        this.material.applyUniforms(activeShader);
         this.buffer.bind();
         this.buffer.draw();
+        if (this.material.hasCustomShader) {
+            shader.use();
+        }
     }
 }
 //# sourceMappingURL=sprite.js.map

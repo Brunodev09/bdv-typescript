@@ -175,6 +175,63 @@ export class m4x4 {
     return m;
   }
 
+  public static perspective(fovRadians: number, aspect: number, near: number, far: number): m4x4 {
+    let m = new m4x4();
+    let f = 1.0 / Math.tan(fovRadians / 2);
+    let nf = 1.0 / (near - far);
+
+    m.data[0] = f / aspect;
+    m.data[1] = 0;
+    m.data[2] = 0;
+    m.data[3] = 0;
+    m.data[4] = 0;
+    m.data[5] = f;
+    m.data[6] = 0;
+    m.data[7] = 0;
+    m.data[8] = 0;
+    m.data[9] = 0;
+    m.data[10] = (far + near) * nf;
+    m.data[11] = -1;
+    m.data[12] = 0;
+    m.data[13] = 0;
+    m.data[14] = 2 * far * near * nf;
+    m.data[15] = 0;
+
+    return m;
+  }
+
+  public static lookAt(eye: vec3, target: vec3, up: vec3): m4x4 {
+    let m = new m4x4();
+
+    let zx = eye.vx - target.vx;
+    let zy = eye.vy - target.vy;
+    let zz = eye.vz - target.vz;
+    let zLen = Math.sqrt(zx * zx + zy * zy + zz * zz);
+    zx /= zLen; zy /= zLen; zz /= zLen;
+
+    // x = normalize(cross(up, z))
+    let xx = up.vy * zz - up.vz * zy;
+    let xy = up.vz * zx - up.vx * zz;
+    let xz = up.vx * zy - up.vy * zx;
+    let xLen = Math.sqrt(xx * xx + xy * xy + xz * xz);
+    xx /= xLen; xy /= xLen; xz /= xLen;
+
+    // y = cross(z, x)
+    let yx = zy * xz - zz * xy;
+    let yy = zz * xx - zx * xz;
+    let yz = zx * xy - zy * xx;
+
+    m.data[0] = xx; m.data[1] = yx; m.data[2]  = zx; m.data[3]  = 0;
+    m.data[4] = xy; m.data[5] = yy; m.data[6]  = zy; m.data[7]  = 0;
+    m.data[8] = xz; m.data[9] = yz; m.data[10] = zz; m.data[11] = 0;
+    m.data[12] = -(xx * eye.vx + xy * eye.vy + xz * eye.vz);
+    m.data[13] = -(yx * eye.vx + yy * eye.vy + yz * eye.vz);
+    m.data[14] = -(zx * eye.vx + zy * eye.vy + zz * eye.vz);
+    m.data[15] = 1;
+
+    return m;
+  }
+
   public toFloat32Array(): Float32Array {
     return new Float32Array(this.data);
   }

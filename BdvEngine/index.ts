@@ -1,9 +1,17 @@
 // Core
 export { Game } from './core/game';
 export { Engine, EngineConfig } from './core/engine';
+export { Engine3D, Engine3DConfig } from './core/engine3d';
 
 // UI
 export { UI, UIStyles } from './core/ui/ui';
+
+// 3D
+export { Camera } from './core/3d/camera';
+export { Mesh } from './core/3d/mesh';
+export { ObjLoader } from './core/3d/objLoader';
+export { LitShader } from './core/3d/litShader';
+export { MeshComponent, MeshComponentData } from './core/3d/meshComponent';
 
 // GL
 export { gl, GLUTools } from './core/gl/gl';
@@ -19,6 +27,8 @@ export { AnimatedSprite } from './core/graphics/animatedSprite';
 export { Texture } from './core/graphics/texture';
 export { TextureManager } from './core/graphics/textureManager';
 export { Draw } from './core/graphics/draw';
+export { SpriteBatcher } from './core/graphics/spriteBatcher';
+export { ParticleEmitter, ParticleConfig, ParticleShape } from './core/graphics/particleEmitter';
 export { Material, UniformValue } from './core/graphics/material';
 export { MaterialManager } from './core/graphics/materialManager';
 

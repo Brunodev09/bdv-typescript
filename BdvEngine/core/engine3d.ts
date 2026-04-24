@@ -1,56 +1,65 @@
 import './registrations';
 import { gl } from './gl/gl';
 import { GLUTools } from './gl/gl';
-import { DefaultShader } from './gl/shaders/defaultShader';
 import { AssetManager } from './assets/assetManager';
 import { InputManager } from './input/inputManager';
 import { ZoneManager } from './world/zoneManager';
 import { m4x4 } from './utils/m4x4';
 import { MessageBus } from './com/messageBus';
 import { Game } from './game';
-import { Draw } from './graphics/draw';
-import { SpriteBatcher } from './graphics/spriteBatcher';
+import { Camera } from './3d/camera';
+import { LitShader } from './3d/litShader';
+import { vec3 } from './utils/vec3';
 
-export interface EngineConfig {
-  /** Target FPS cap. 0 = uncapped (requestAnimationFrame only). Default: 60 */
+export interface Engine3DConfig {
   targetFps?: number;
-  /** Show built-in FPS counter overlay. Default: false */
   showFps?: boolean;
+  clearColor?: [number, number, number, number];
 }
 
-export class Engine {
+export class Engine3D {
   private canvas: HTMLCanvasElement;
-  private defaultShader!: DefaultShader;
-  private projectionMatrix!: m4x4;
+  private litShader!: LitShader;
   private previousTime: number = 0;
   private game: Game;
 
-  // FPS limiting
-  private targetFps: number;
-  private frameInterval: number; // ms per frame
-  private accumulator: number = 0;
+  /** The camera — move it from your game code. */
+  public camera: Camera;
 
-  // FPS tracking
+  /** Directional light direction (points toward the light). */
+  public lightDir: vec3 = new vec3(0.5, 1.0, 0.8);
+  /** Light color (RGB 0-1). */
+  public lightColor: vec3 = new vec3(1, 1, 1);
+  /** Ambient color (RGB 0-1). */
+  public ambientColor: vec3 = new vec3(0.15, 0.15, 0.2);
+
+  // FPS
+  private targetFps: number;
+  private frameInterval: number;
+  private accumulator: number = 0;
   private showFps: boolean;
   private frameCount: number = 0;
   private fpsTimer: number = 0;
   private currentFps: number = 0;
   private fpsElement: HTMLDivElement | null = null;
 
-  public constructor(canvas: HTMLCanvasElement, game: Game, config?: EngineConfig) {
+  constructor(canvas: HTMLCanvasElement, game: Game, config?: Engine3DConfig) {
     this.canvas = canvas;
     this.game = game;
+    this.camera = new Camera();
     this.targetFps = config?.targetFps ?? 60;
     this.frameInterval = this.targetFps > 0 ? 1000 / this.targetFps : 0;
     this.showFps = config?.showFps ?? false;
+
+    if (config?.clearColor) {
+      this.clearColor = config.clearColor;
+    }
   }
 
-  /** Current measured FPS. Read this from your game if needed. */
-  public get fps(): number {
-    return this.currentFps;
-  }
+  private clearColor: [number, number, number, number] = [0.1, 0.1, 0.15, 1];
 
-  /** Change FPS cap at runtime. 0 = uncapped. */
+  public get fps(): number { return this.currentFps; }
+
   public setTargetFps(fps: number): void {
     this.targetFps = fps;
     this.frameInterval = fps > 0 ? 1000 / fps : 0;
@@ -63,21 +72,15 @@ export class Engine {
     InputManager.initialize();
     ZoneManager.init();
 
-    gl.clearColor(0, 0, 0.3, 1);
+    gl.clearColor(...this.clearColor);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.enable(gl.CULL_FACE);
+    gl.cullFace(gl.BACK);
 
-    this.defaultShader = new DefaultShader();
-    this.defaultShader.use();
-
-    this.projectionMatrix = m4x4.ortho(
-      0,
-      this.canvas.width,
-      this.canvas.height,
-      0,
-      -100.0,
-      100.0,
-    );
+    this.litShader = new LitShader();
 
     if (this.showFps) {
       this.createFpsOverlay();
@@ -90,30 +93,20 @@ export class Engine {
     requestAnimationFrame(this.tick.bind(this));
   }
 
-  public getShader(): DefaultShader {
-    return this.defaultShader;
+  public getShader(): LitShader {
+    return this.litShader;
   }
 
   public resize(): void {
     this.canvas.width = window.innerWidth;
     this.canvas.height = window.innerHeight;
-
-    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-    this.projectionMatrix = m4x4.ortho(
-      0,
-      this.canvas.width,
-      this.canvas.height,
-      0,
-      -100.0,
-      100.0,
-    );
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
   }
 
   private tick(): void {
     let now = performance.now();
     let elapsed = now - this.previousTime;
 
-    // FPS limiting: skip frame if we haven't waited long enough
     if (this.frameInterval > 0) {
       this.accumulator += elapsed;
       this.previousTime = now;
@@ -123,19 +116,14 @@ export class Engine {
         return;
       }
 
-      // consume one frame interval, carry remainder
       let delta = this.frameInterval;
       this.accumulator -= this.frameInterval;
-      // prevent spiral of death — clamp accumulated time
-      if (this.accumulator > this.frameInterval * 3) {
-        this.accumulator = 0;
-      }
+      if (this.accumulator > this.frameInterval * 3) this.accumulator = 0;
 
       this.updateFpsCounter(delta);
       this.update(delta);
       this.render();
     } else {
-      // uncapped
       this.previousTime = now;
       this.updateFpsCounter(elapsed);
       this.update(elapsed);
@@ -152,9 +140,7 @@ export class Engine {
       this.currentFps = this.frameCount;
       this.frameCount = 0;
       this.fpsTimer -= 1000;
-      if (this.fpsElement) {
-        this.fpsElement.textContent = `${this.currentFps} FPS`;
-      }
+      if (this.fpsElement) this.fpsElement.textContent = `${this.currentFps} FPS`;
     }
   }
 
@@ -165,25 +151,25 @@ export class Engine {
   }
 
   private render(): void {
-    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    // Ensure default shader is active before setting its uniforms
-    this.defaultShader.use();
+    this.litShader.use();
 
-    let projectionPosition = this.defaultShader.getUniformLocation("u_proj");
-    gl.uniformMatrix4fv(
-      projectionPosition,
-      false,
-      new Float32Array(this.projectionMatrix.mData),
-    );
+    let aspect = this.canvas.width / this.canvas.height;
+    let proj = this.camera.getProjectionMatrix(aspect);
+    let view = this.camera.getViewMatrix();
 
-    Draw.setProjection(this.projectionMatrix);
+    gl.uniformMatrix4fv(this.litShader.getUniformLocation("u_proj"), false, proj.toFloat32Array());
+    gl.uniformMatrix4fv(this.litShader.getUniformLocation("u_view"), false, view.toFloat32Array());
 
-    this.game.render(this.defaultShader);
-    ZoneManager.render(this.defaultShader);
+    // Lighting
+    gl.uniform3f(this.litShader.getUniformLocation("u_lightDir"), this.lightDir.vx, this.lightDir.vy, this.lightDir.vz);
+    gl.uniform3f(this.litShader.getUniformLocation("u_lightColor"), this.lightColor.vx, this.lightColor.vy, this.lightColor.vz);
+    gl.uniform3f(this.litShader.getUniformLocation("u_ambientColor"), this.ambientColor.vx, this.ambientColor.vy, this.ambientColor.vz);
+    gl.uniform3f(this.litShader.getUniformLocation("u_viewPos"), this.camera.position.vx, this.camera.position.vy, this.camera.position.vz);
 
-    // Flush batched sprites (1 draw call per texture+shader combo)
-    SpriteBatcher.flush();
+    this.game.render(this.litShader);
+    ZoneManager.render(this.litShader);
   }
 
   private createFpsOverlay(): void {

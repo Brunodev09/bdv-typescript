@@ -1,5 +1,6 @@
 export { Game } from './core/game';
 export { Engine } from './core/engine';
+export { UI } from './core/ui/ui';
 export { gl, GLUTools } from './core/gl/gl';
 export { Shader } from './core/gl/shader';
 export { DefaultShader } from './core/gl/shaders/defaultShader';
@@ -11,6 +12,7 @@ export { AnimatedSprite } from './core/graphics/animatedSprite';
 export { Texture } from './core/graphics/texture';
 export { TextureManager } from './core/graphics/textureManager';
 export { Draw } from './core/graphics/draw';
+export { SpriteBatcher } from './core/graphics/spriteBatcher';
 export { Material } from './core/graphics/material';
 export { MaterialManager } from './core/graphics/materialManager';
 export { vec2 } from './core/utils/vec2';

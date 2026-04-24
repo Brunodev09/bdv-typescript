@@ -2,6 +2,451 @@
 /******/ 	"use strict";
 /******/ 	var __webpack_modules__ = ({
 
+/***/ "./BdvEngine/core/3d/camera.ts"
+/*!*************************************!*\
+  !*** ./BdvEngine/core/3d/camera.ts ***!
+  \*************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   Camera: () => (/* binding */ Camera)
+/* harmony export */ });
+/* harmony import */ var _utils_vec3__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../utils/vec3 */ "./BdvEngine/core/utils/vec3.ts");
+/* harmony import */ var _utils_m4x4__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../utils/m4x4 */ "./BdvEngine/core/utils/m4x4.ts");
+
+
+class Camera {
+    constructor(position = new _utils_vec3__WEBPACK_IMPORTED_MODULE_0__.vec3(0, 2, 5), target = new _utils_vec3__WEBPACK_IMPORTED_MODULE_0__.vec3(0, 0, 0), up = new _utils_vec3__WEBPACK_IMPORTED_MODULE_0__.vec3(0, 1, 0), fov = Math.PI / 4, near = 0.1, far = 1000) {
+        this.position = position;
+        this.target = target;
+        this.up = up;
+        this.fov = fov;
+        this.near = near;
+        this.far = far;
+    }
+    getViewMatrix() {
+        return _utils_m4x4__WEBPACK_IMPORTED_MODULE_1__.m4x4.lookAt(this.position, this.target, this.up);
+    }
+    getProjectionMatrix(aspect) {
+        return _utils_m4x4__WEBPACK_IMPORTED_MODULE_1__.m4x4.perspective(this.fov, aspect, this.near, this.far);
+    }
+    getViewProjection(aspect) {
+        return _utils_m4x4__WEBPACK_IMPORTED_MODULE_1__.m4x4.multiply(this.getProjectionMatrix(aspect), this.getViewMatrix());
+    }
+}
+
+
+/***/ },
+
+/***/ "./BdvEngine/core/3d/litShader.ts"
+/*!****************************************!*\
+  !*** ./BdvEngine/core/3d/litShader.ts ***!
+  \****************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   LitShader: () => (/* binding */ LitShader)
+/* harmony export */ });
+/* harmony import */ var _gl_shader__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../gl/shader */ "./BdvEngine/core/gl/shader.ts");
+
+class LitShader extends _gl_shader__WEBPACK_IMPORTED_MODULE_0__.Shader {
+    constructor() {
+        super("lit3d");
+        this.load(this.vertSrc(), this.fragSrc());
+    }
+    vertSrc() {
+        return `
+      attribute vec3 a_pos;
+      attribute vec3 a_normal;
+      attribute vec2 a_textCoord;
+
+      uniform mat4 u_proj;
+      uniform mat4 u_view;
+      uniform mat4 u_model;
+      uniform mat4 u_normalMatrix;
+
+      varying vec3 v_normal;
+      varying vec2 v_textCoord;
+      varying vec3 v_fragPos;
+
+      void main() {
+          vec4 worldPos = u_model * vec4(a_pos, 1.0);
+          gl_Position = u_proj * u_view * worldPos;
+          v_fragPos = worldPos.xyz;
+          v_normal = (u_normalMatrix * vec4(a_normal, 0.0)).xyz;
+          v_textCoord = a_textCoord;
+      }`;
+    }
+    fragSrc() {
+        return `
+      precision mediump float;
+
+      uniform vec4 u_color;
+      uniform sampler2D u_diffuse;
+      uniform vec3 u_lightDir;
+      uniform vec3 u_lightColor;
+      uniform vec3 u_ambientColor;
+      uniform vec3 u_viewPos;
+
+      varying vec3 v_normal;
+      varying vec2 v_textCoord;
+      varying vec3 v_fragPos;
+
+      void main() {
+          vec4 texColor = texture2D(u_diffuse, v_textCoord) * u_color;
+          vec3 normal = normalize(v_normal);
+          vec3 lightDir = normalize(u_lightDir);
+
+          // Diffuse
+          float diff = max(dot(normal, lightDir), 0.0);
+          vec3 diffuse = diff * u_lightColor;
+
+          // Specular (Blinn-Phong)
+          vec3 viewDir = normalize(u_viewPos - v_fragPos);
+          vec3 halfDir = normalize(lightDir + viewDir);
+          float spec = pow(max(dot(normal, halfDir), 0.0), 32.0);
+          vec3 specular = spec * u_lightColor * 0.5;
+
+          vec3 result = (u_ambientColor + diffuse + specular) * texColor.rgb;
+          gl_FragColor = vec4(result, texColor.a);
+      }`;
+    }
+}
+
+
+/***/ },
+
+/***/ "./BdvEngine/core/3d/mesh.ts"
+/*!***********************************!*\
+  !*** ./BdvEngine/core/3d/mesh.ts ***!
+  \***********************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   Mesh: () => (/* binding */ Mesh)
+/* harmony export */ });
+/* harmony import */ var _gl_gl__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../gl/gl */ "./BdvEngine/core/gl/gl.ts");
+
+class Mesh {
+    constructor(vertices, indices) {
+        this.ibo = null;
+        this.indexCount = 0;
+        this.initialized = false;
+        this.indexData = null;
+        this.vertexData = new Float32Array(vertices);
+        this.vertexCount = vertices.length / Mesh.FLOATS_PER_VERTEX;
+        this.vbo = null;
+        if (indices && indices.length > 0) {
+            this.indexData = new Uint16Array(indices);
+            this.indexCount = indices.length;
+        }
+    }
+    ensureGl() {
+        if (this.initialized)
+            return;
+        this.initialized = true;
+        this.vbo = _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.createBuffer();
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bindBuffer(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ARRAY_BUFFER, this.vbo);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bufferData(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ARRAY_BUFFER, this.vertexData, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.STATIC_DRAW);
+        if (this.indexData) {
+            this.ibo = _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.createBuffer();
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bindBuffer(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ELEMENT_ARRAY_BUFFER, this.ibo);
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bufferData(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ELEMENT_ARRAY_BUFFER, this.indexData, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.STATIC_DRAW);
+        }
+    }
+    bind(posLoc, normalLoc, texLoc) {
+        this.ensureGl();
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bindBuffer(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ARRAY_BUFFER, this.vbo);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.vertexAttribPointer(posLoc, 3, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.FLOAT, false, Mesh.STRIDE, 0);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.enableVertexAttribArray(posLoc);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.vertexAttribPointer(normalLoc, 3, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.FLOAT, false, Mesh.STRIDE, 3 * 4);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.enableVertexAttribArray(normalLoc);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.vertexAttribPointer(texLoc, 2, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.FLOAT, false, Mesh.STRIDE, 6 * 4);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.enableVertexAttribArray(texLoc);
+        if (this.ibo) {
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bindBuffer(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ELEMENT_ARRAY_BUFFER, this.ibo);
+        }
+    }
+    draw() {
+        if (this.ibo) {
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.drawElements(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TRIANGLES, this.indexCount, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.UNSIGNED_SHORT, 0);
+        }
+        else {
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.drawArrays(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TRIANGLES, 0, this.vertexCount);
+        }
+    }
+    unbind(posLoc, normalLoc, texLoc) {
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.disableVertexAttribArray(posLoc);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.disableVertexAttribArray(normalLoc);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.disableVertexAttribArray(texLoc);
+    }
+    destroy() {
+        if (this.vbo)
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.deleteBuffer(this.vbo);
+        if (this.ibo)
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.deleteBuffer(this.ibo);
+    }
+    static cube() {
+        let v = [];
+        let idx = [];
+        function face(p0, p1, p2, p3, n) {
+            let base = v.length / 8;
+            v.push(...p0, ...n, 0, 0);
+            v.push(...p1, ...n, 1, 0);
+            v.push(...p2, ...n, 1, 1);
+            v.push(...p3, ...n, 0, 1);
+            idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        }
+        face([-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, 0.5], [0, 0, 1]);
+        face([0.5, -0.5, -0.5], [-0.5, -0.5, -0.5], [-0.5, 0.5, -0.5], [0.5, 0.5, -0.5], [0, 0, -1]);
+        face([-0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [0.5, 0.5, -0.5], [-0.5, 0.5, -0.5], [0, 1, 0]);
+        face([-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [0.5, -0.5, 0.5], [-0.5, -0.5, 0.5], [0, -1, 0]);
+        face([0.5, -0.5, 0.5], [0.5, -0.5, -0.5], [0.5, 0.5, -0.5], [0.5, 0.5, 0.5], [1, 0, 0]);
+        face([-0.5, -0.5, -0.5], [-0.5, -0.5, 0.5], [-0.5, 0.5, 0.5], [-0.5, 0.5, -0.5], [-1, 0, 0]);
+        return new Mesh(v, idx);
+    }
+    static plane(size = 1) {
+        let h = size / 2;
+        let v = [
+            -h, 0, -h, 0, 1, 0, 0, 0,
+            h, 0, -h, 0, 1, 0, 1, 0,
+            h, 0, h, 0, 1, 0, 1, 1,
+            -h, 0, h, 0, 1, 0, 0, 1,
+            -h, 0, h, 0, -1, 0, 0, 0,
+            h, 0, h, 0, -1, 0, 1, 0,
+            h, 0, -h, 0, -1, 0, 1, 1,
+            -h, 0, -h, 0, -1, 0, 0, 1,
+        ];
+        let idx = [
+            0, 1, 2, 0, 2, 3,
+            4, 5, 6, 4, 6, 7,
+        ];
+        return new Mesh(v, idx);
+    }
+    static sphere(segments = 16, rings = 12) {
+        let v = [];
+        let idx = [];
+        for (let r = 0; r <= rings; r++) {
+            let phi = (r / rings) * Math.PI;
+            let sp = Math.sin(phi), cp = Math.cos(phi);
+            for (let s = 0; s <= segments; s++) {
+                let theta = (s / segments) * Math.PI * 2;
+                let st = Math.sin(theta), ct = Math.cos(theta);
+                let x = ct * sp;
+                let y = cp;
+                let z = st * sp;
+                let u = s / segments;
+                let vv = r / rings;
+                v.push(x * 0.5, y * 0.5, z * 0.5, x, y, z, u, vv);
+            }
+        }
+        for (let r = 0; r < rings; r++) {
+            for (let s = 0; s < segments; s++) {
+                let a = r * (segments + 1) + s;
+                let b = a + segments + 1;
+                idx.push(a, b, a + 1);
+                idx.push(a + 1, b, b + 1);
+            }
+        }
+        return new Mesh(v, idx);
+    }
+}
+Mesh.FLOATS_PER_VERTEX = 8;
+Mesh.STRIDE = 8 * 4;
+
+
+/***/ },
+
+/***/ "./BdvEngine/core/3d/meshComponent.ts"
+/*!********************************************!*\
+  !*** ./BdvEngine/core/3d/meshComponent.ts ***!
+  \********************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   MeshComponent: () => (/* binding */ MeshComponent),
+/* harmony export */   MeshComponentData: () => (/* binding */ MeshComponentData)
+/* harmony export */ });
+/* harmony import */ var _gl_gl__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../gl/gl */ "./BdvEngine/core/gl/gl.ts");
+/* harmony import */ var _components_baseComponent__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../components/baseComponent */ "./BdvEngine/core/components/baseComponent.ts");
+/* harmony import */ var _graphics_materialManager__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ../graphics/materialManager */ "./BdvEngine/core/graphics/materialManager.ts");
+
+
+
+class MeshComponentData {
+    constructor() {
+        this.name = '';
+        this.materialName = '';
+    }
+    setFromJson(json) {
+        if (json.name !== undefined)
+            this.name = String(json.name);
+        if (json.materialName !== undefined)
+            this.materialName = String(json.materialName);
+    }
+}
+class MeshComponent extends _components_baseComponent__WEBPACK_IMPORTED_MODULE_1__.BaseComponent {
+    constructor(mesh, materialName) {
+        let data = new MeshComponentData();
+        data.name = 'mesh';
+        data.materialName = materialName;
+        super(data);
+        this.mesh = mesh;
+        this.material = _graphics_materialManager__WEBPACK_IMPORTED_MODULE_2__.MaterialManager.get(materialName);
+    }
+    render(shader) {
+        let activeShader = shader;
+        if (this.material.hasCustomShader) {
+            activeShader = this.material.shader;
+            activeShader.use();
+        }
+        let model = this.owner.getWorldMatrix;
+        let modelLoc = activeShader.getUniformLocation("u_model");
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix4fv(modelLoc, false, model.toFloat32Array());
+        let normalMatLoc = activeShader.getUniformLocation("u_normalMatrix");
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix4fv(normalMatLoc, false, model.toFloat32Array());
+        let colorLoc = activeShader.getUniformLocation("u_color");
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniform4fv(colorLoc, this.material.diffColor.toArrayFloat32());
+        if (this.material.diffTexture) {
+            this.material.diffTexture.activate(0);
+            let diffLoc = activeShader.getUniformLocation("u_diffuse");
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniform1i(diffLoc, 0);
+        }
+        this.material.applyUniforms(activeShader);
+        let posLoc = activeShader.getAttribLocation("a_pos");
+        let normalLoc = activeShader.getAttribLocation("a_normal");
+        let texLoc = activeShader.getAttribLocation("a_textCoord");
+        this.mesh.bind(posLoc, normalLoc, texLoc);
+        this.mesh.draw();
+        this.mesh.unbind(posLoc, normalLoc, texLoc);
+        if (this.material.hasCustomShader) {
+            shader.use();
+        }
+    }
+}
+
+
+/***/ },
+
+/***/ "./BdvEngine/core/3d/objLoader.ts"
+/*!****************************************!*\
+  !*** ./BdvEngine/core/3d/objLoader.ts ***!
+  \****************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   ObjLoader: () => (/* binding */ ObjLoader)
+/* harmony export */ });
+/* harmony import */ var _mesh__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./mesh */ "./BdvEngine/core/3d/mesh.ts");
+
+class ObjLoader {
+    static parse(objText) {
+        let positions = [];
+        let normals = [];
+        let texcoords = [];
+        let vertices = [];
+        let vertexMap = new Map();
+        let indices = [];
+        let lines = objText.split('\n');
+        for (let line of lines) {
+            line = line.trim();
+            if (line.length === 0 || line[0] === '#')
+                continue;
+            let parts = line.split(/\s+/);
+            let cmd = parts[0];
+            if (cmd === 'v') {
+                positions.push([
+                    parseFloat(parts[1]),
+                    parseFloat(parts[2]),
+                    parseFloat(parts[3]),
+                ]);
+            }
+            else if (cmd === 'vn') {
+                normals.push([
+                    parseFloat(parts[1]),
+                    parseFloat(parts[2]),
+                    parseFloat(parts[3]),
+                ]);
+            }
+            else if (cmd === 'vt') {
+                texcoords.push([
+                    parseFloat(parts[1]),
+                    parseFloat(parts[2] || '0'),
+                ]);
+            }
+            else if (cmd === 'f') {
+                let faceVerts = [];
+                for (let i = 1; i < parts.length; i++) {
+                    let key = parts[i];
+                    let existing = vertexMap.get(key);
+                    if (existing !== undefined) {
+                        faceVerts.push(existing);
+                        continue;
+                    }
+                    let segs = key.split('/');
+                    let pi = parseInt(segs[0]) - 1;
+                    let ti = segs.length > 1 && segs[1] ? parseInt(segs[1]) - 1 : -1;
+                    let ni = segs.length > 2 && segs[2] ? parseInt(segs[2]) - 1 : -1;
+                    let pos = positions[pi] || [0, 0, 0];
+                    let nor = ni >= 0 ? normals[ni] : [0, 0, 0];
+                    let tex = ti >= 0 ? texcoords[ti] : [0, 0];
+                    let idx = vertices.length / 8;
+                    vertices.push(pos[0], pos[1], pos[2], nor[0], nor[1], nor[2], tex[0], tex[1]);
+                    vertexMap.set(key, idx);
+                    faceVerts.push(idx);
+                }
+                for (let i = 1; i < faceVerts.length - 1; i++) {
+                    indices.push(faceVerts[0], faceVerts[i], faceVerts[i + 1]);
+                }
+            }
+        }
+        if (normals.length === 0) {
+            ObjLoader.generateFlatNormals(vertices, indices);
+        }
+        return new _mesh__WEBPACK_IMPORTED_MODULE_0__.Mesh(vertices, indices);
+    }
+    static generateFlatNormals(vertices, indices) {
+        for (let i = 0; i < vertices.length; i += 8) {
+            vertices[i + 3] = 0;
+            vertices[i + 4] = 0;
+            vertices[i + 5] = 0;
+        }
+        for (let i = 0; i < indices.length; i += 3) {
+            let a = indices[i] * 8, b = indices[i + 1] * 8, c = indices[i + 2] * 8;
+            let ax = vertices[a], ay = vertices[a + 1], az = vertices[a + 2];
+            let bx = vertices[b], by = vertices[b + 1], bz = vertices[b + 2];
+            let cx = vertices[c], cy = vertices[c + 1], cz = vertices[c + 2];
+            let e1x = bx - ax, e1y = by - ay, e1z = bz - az;
+            let e2x = cx - ax, e2y = cy - ay, e2z = cz - az;
+            let nx = e1y * e2z - e1z * e2y;
+            let ny = e1z * e2x - e1x * e2z;
+            let nz = e1x * e2y - e1y * e2x;
+            for (let vi of [a, b, c]) {
+                vertices[vi + 3] += nx;
+                vertices[vi + 4] += ny;
+                vertices[vi + 5] += nz;
+            }
+        }
+        for (let i = 0; i < vertices.length; i += 8) {
+            let nx = vertices[i + 3], ny = vertices[i + 4], nz = vertices[i + 5];
+            let len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+            if (len > 0) {
+                vertices[i + 3] /= len;
+                vertices[i + 4] /= len;
+                vertices[i + 5] /= len;
+            }
+        }
+    }
+}
+
+
+/***/ },
+
 /***/ "./BdvEngine/core/assets/assetManager.ts"
 /*!***********************************************!*\
   !*** ./BdvEngine/core/assets/assetManager.ts ***!
@@ -532,7 +977,12 @@ class AnimatedSpriteComponent extends _baseComponent__WEBPACK_IMPORTED_MODULE_1_
         super.update(time);
     }
     render(shader) {
-        this.sprite.render(shader, this.getOwner.getWorldMatrix);
+        if (this.sprite.hasCustomShader) {
+            this.sprite.render(shader, this.getOwner.getWorldMatrix);
+        }
+        else {
+            this.sprite.pushToBatch(this.getOwner.getWorldMatrix);
+        }
         super.render(shader);
     }
 }
@@ -647,7 +1097,12 @@ class SpriteComponent extends _baseComponent__WEBPACK_IMPORTED_MODULE_0__.BaseCo
         this.sprite.load();
     }
     render(shader) {
-        this.sprite.render(shader, this.getOwner.getWorldMatrix);
+        if (this.sprite.hasCustomShader) {
+            this.sprite.render(shader, this.getOwner.getWorldMatrix);
+        }
+        else {
+            this.sprite.pushToBatch(this.getOwner.getWorldMatrix);
+        }
         super.render(shader);
     }
 }
@@ -675,6 +1130,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _utils_m4x4__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./utils/m4x4 */ "./BdvEngine/core/utils/m4x4.ts");
 /* harmony import */ var _com_messageBus__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ./com/messageBus */ "./BdvEngine/core/com/messageBus.ts");
 /* harmony import */ var _graphics_draw__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(/*! ./graphics/draw */ "./BdvEngine/core/graphics/draw.ts");
+/* harmony import */ var _graphics_spriteBatcher__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(/*! ./graphics/spriteBatcher */ "./BdvEngine/core/graphics/spriteBatcher.ts");
+
 
 
 
@@ -781,11 +1238,169 @@ class Engine {
     }
     render() {
         _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.clear(_gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.COLOR_BUFFER_BIT);
+        this.defaultShader.use();
         let projectionPosition = this.defaultShader.getUniformLocation("u_proj");
         _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.uniformMatrix4fv(projectionPosition, false, new Float32Array(this.projectionMatrix.mData));
         _graphics_draw__WEBPACK_IMPORTED_MODULE_8__.Draw.setProjection(this.projectionMatrix);
         this.game.render(this.defaultShader);
         _world_zoneManager__WEBPACK_IMPORTED_MODULE_5__.ZoneManager.render(this.defaultShader);
+        _graphics_spriteBatcher__WEBPACK_IMPORTED_MODULE_9__.SpriteBatcher.flush();
+    }
+    createFpsOverlay() {
+        this.fpsElement = document.createElement("div");
+        this.fpsElement.style.cssText =
+            "position:fixed;top:4px;left:4px;color:#0f0;font:bold 14px monospace;" +
+                "background:rgba(0,0,0,0.6);padding:2px 6px;pointer-events:none;z-index:9999;";
+        this.fpsElement.textContent = "0 FPS";
+        document.body.appendChild(this.fpsElement);
+    }
+}
+
+
+/***/ },
+
+/***/ "./BdvEngine/core/engine3d.ts"
+/*!************************************!*\
+  !*** ./BdvEngine/core/engine3d.ts ***!
+  \************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   Engine3D: () => (/* binding */ Engine3D)
+/* harmony export */ });
+/* harmony import */ var _registrations__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./registrations */ "./BdvEngine/core/registrations.ts");
+/* harmony import */ var _gl_gl__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./gl/gl */ "./BdvEngine/core/gl/gl.ts");
+/* harmony import */ var _assets_assetManager__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./assets/assetManager */ "./BdvEngine/core/assets/assetManager.ts");
+/* harmony import */ var _input_inputManager__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./input/inputManager */ "./BdvEngine/core/input/inputManager.ts");
+/* harmony import */ var _world_zoneManager__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./world/zoneManager */ "./BdvEngine/core/world/zoneManager.ts");
+/* harmony import */ var _com_messageBus__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./com/messageBus */ "./BdvEngine/core/com/messageBus.ts");
+/* harmony import */ var _3d_camera__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./3d/camera */ "./BdvEngine/core/3d/camera.ts");
+/* harmony import */ var _3d_litShader__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ./3d/litShader */ "./BdvEngine/core/3d/litShader.ts");
+/* harmony import */ var _utils_vec3__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(/*! ./utils/vec3 */ "./BdvEngine/core/utils/vec3.ts");
+
+
+
+
+
+
+
+
+
+
+class Engine3D {
+    constructor(canvas, game, config) {
+        var _a, _b;
+        this.previousTime = 0;
+        this.lightDir = new _utils_vec3__WEBPACK_IMPORTED_MODULE_8__.vec3(0.5, 1.0, 0.8);
+        this.lightColor = new _utils_vec3__WEBPACK_IMPORTED_MODULE_8__.vec3(1, 1, 1);
+        this.ambientColor = new _utils_vec3__WEBPACK_IMPORTED_MODULE_8__.vec3(0.15, 0.15, 0.2);
+        this.accumulator = 0;
+        this.frameCount = 0;
+        this.fpsTimer = 0;
+        this.currentFps = 0;
+        this.fpsElement = null;
+        this.clearColor = [0.1, 0.1, 0.15, 1];
+        this.canvas = canvas;
+        this.game = game;
+        this.camera = new _3d_camera__WEBPACK_IMPORTED_MODULE_6__.Camera();
+        this.targetFps = (_a = config === null || config === void 0 ? void 0 : config.targetFps) !== null && _a !== void 0 ? _a : 60;
+        this.frameInterval = this.targetFps > 0 ? 1000 / this.targetFps : 0;
+        this.showFps = (_b = config === null || config === void 0 ? void 0 : config.showFps) !== null && _b !== void 0 ? _b : false;
+        if (config === null || config === void 0 ? void 0 : config.clearColor) {
+            this.clearColor = config.clearColor;
+        }
+    }
+    get fps() { return this.currentFps; }
+    setTargetFps(fps) {
+        this.targetFps = fps;
+        this.frameInterval = fps > 0 ? 1000 / fps : 0;
+    }
+    start() {
+        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.GLUTools.init(this.canvas);
+        _assets_assetManager__WEBPACK_IMPORTED_MODULE_2__.AssetManager.init();
+        _input_inputManager__WEBPACK_IMPORTED_MODULE_3__.InputManager.initialize();
+        _world_zoneManager__WEBPACK_IMPORTED_MODULE_4__.ZoneManager.init();
+        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.clearColor(...this.clearColor);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.enable(_gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.BLEND);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.blendFunc(_gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.SRC_ALPHA, _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.ONE_MINUS_SRC_ALPHA);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.enable(_gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.DEPTH_TEST);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.depthFunc(_gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.LEQUAL);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.enable(_gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.CULL_FACE);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.cullFace(_gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.BACK);
+        this.litShader = new _3d_litShader__WEBPACK_IMPORTED_MODULE_7__.LitShader();
+        if (this.showFps) {
+            this.createFpsOverlay();
+        }
+        this.game.init();
+        this.resize();
+        this.previousTime = performance.now();
+        requestAnimationFrame(this.tick.bind(this));
+    }
+    getShader() {
+        return this.litShader;
+    }
+    resize() {
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    }
+    tick() {
+        let now = performance.now();
+        let elapsed = now - this.previousTime;
+        if (this.frameInterval > 0) {
+            this.accumulator += elapsed;
+            this.previousTime = now;
+            if (this.accumulator < this.frameInterval) {
+                requestAnimationFrame(this.tick.bind(this));
+                return;
+            }
+            let delta = this.frameInterval;
+            this.accumulator -= this.frameInterval;
+            if (this.accumulator > this.frameInterval * 3)
+                this.accumulator = 0;
+            this.updateFpsCounter(delta);
+            this.update(delta);
+            this.render();
+        }
+        else {
+            this.previousTime = now;
+            this.updateFpsCounter(elapsed);
+            this.update(elapsed);
+            this.render();
+        }
+        requestAnimationFrame(this.tick.bind(this));
+    }
+    updateFpsCounter(delta) {
+        this.frameCount++;
+        this.fpsTimer += delta;
+        if (this.fpsTimer >= 1000) {
+            this.currentFps = this.frameCount;
+            this.frameCount = 0;
+            this.fpsTimer -= 1000;
+            if (this.fpsElement)
+                this.fpsElement.textContent = `${this.currentFps} FPS`;
+        }
+    }
+    update(delta) {
+        _com_messageBus__WEBPACK_IMPORTED_MODULE_5__.MessageBus.update(delta);
+        this.game.update(delta);
+        _world_zoneManager__WEBPACK_IMPORTED_MODULE_4__.ZoneManager.update(delta);
+    }
+    render() {
+        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.clear(_gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.COLOR_BUFFER_BIT | _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.DEPTH_BUFFER_BIT);
+        this.litShader.use();
+        let aspect = this.canvas.width / this.canvas.height;
+        let proj = this.camera.getProjectionMatrix(aspect);
+        let view = this.camera.getViewMatrix();
+        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.uniformMatrix4fv(this.litShader.getUniformLocation("u_proj"), false, proj.toFloat32Array());
+        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.uniformMatrix4fv(this.litShader.getUniformLocation("u_view"), false, view.toFloat32Array());
+        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.uniform3f(this.litShader.getUniformLocation("u_lightDir"), this.lightDir.vx, this.lightDir.vy, this.lightDir.vz);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.uniform3f(this.litShader.getUniformLocation("u_lightColor"), this.lightColor.vx, this.lightColor.vy, this.lightColor.vz);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.uniform3f(this.litShader.getUniformLocation("u_ambientColor"), this.ambientColor.vx, this.ambientColor.vy, this.ambientColor.vz);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.uniform3f(this.litShader.getUniformLocation("u_viewPos"), this.camera.position.vx, this.camera.position.vy, this.camera.position.vz);
+        this.game.render(this.litShader);
+        _world_zoneManager__WEBPACK_IMPORTED_MODULE_4__.ZoneManager.render(this.litShader);
     }
     createFpsOverlay() {
         this.fpsElement = document.createElement("div");
@@ -1686,6 +2301,123 @@ class MaterialRefNode {
 
 /***/ },
 
+/***/ "./BdvEngine/core/graphics/particleEmitter.ts"
+/*!****************************************************!*\
+  !*** ./BdvEngine/core/graphics/particleEmitter.ts ***!
+  \****************************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   ParticleEmitter: () => (/* binding */ ParticleEmitter)
+/* harmony export */ });
+/* harmony import */ var _color__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./color */ "./BdvEngine/core/graphics/color.ts");
+/* harmony import */ var _draw__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./draw */ "./BdvEngine/core/graphics/draw.ts");
+
+
+class ParticleEmitter {
+    constructor(x, y, config) {
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s;
+        this.spawnAccumulator = 0;
+        this.x = x;
+        this.y = y;
+        this.config = {
+            maxParticles: (_a = config === null || config === void 0 ? void 0 : config.maxParticles) !== null && _a !== void 0 ? _a : 200,
+            spawnRate: (_b = config === null || config === void 0 ? void 0 : config.spawnRate) !== null && _b !== void 0 ? _b : 50,
+            lifetimeMin: (_c = config === null || config === void 0 ? void 0 : config.lifetimeMin) !== null && _c !== void 0 ? _c : 500,
+            lifetimeMax: (_d = config === null || config === void 0 ? void 0 : config.lifetimeMax) !== null && _d !== void 0 ? _d : 1500,
+            speedMin: (_e = config === null || config === void 0 ? void 0 : config.speedMin) !== null && _e !== void 0 ? _e : 0.05,
+            speedMax: (_f = config === null || config === void 0 ? void 0 : config.speedMax) !== null && _f !== void 0 ? _f : 0.2,
+            direction: (_g = config === null || config === void 0 ? void 0 : config.direction) !== null && _g !== void 0 ? _g : -Math.PI / 2,
+            spread: (_h = config === null || config === void 0 ? void 0 : config.spread) !== null && _h !== void 0 ? _h : Math.PI,
+            sizeMin: (_j = config === null || config === void 0 ? void 0 : config.sizeMin) !== null && _j !== void 0 ? _j : 2,
+            sizeMax: (_k = config === null || config === void 0 ? void 0 : config.sizeMax) !== null && _k !== void 0 ? _k : 6,
+            colorStart: (_l = config === null || config === void 0 ? void 0 : config.colorStart) !== null && _l !== void 0 ? _l : new _color__WEBPACK_IMPORTED_MODULE_0__.Color(255, 200, 50, 255),
+            colorEnd: (_m = config === null || config === void 0 ? void 0 : config.colorEnd) !== null && _m !== void 0 ? _m : new _color__WEBPACK_IMPORTED_MODULE_0__.Color(255, 50, 0, 255),
+            alphaStart: (_o = config === null || config === void 0 ? void 0 : config.alphaStart) !== null && _o !== void 0 ? _o : 255,
+            alphaEnd: (_p = config === null || config === void 0 ? void 0 : config.alphaEnd) !== null && _p !== void 0 ? _p : 0,
+            gravity: (_q = config === null || config === void 0 ? void 0 : config.gravity) !== null && _q !== void 0 ? _q : 0,
+            shape: (_r = config === null || config === void 0 ? void 0 : config.shape) !== null && _r !== void 0 ? _r : 'rect',
+            emitting: (_s = config === null || config === void 0 ? void 0 : config.emitting) !== null && _s !== void 0 ? _s : true,
+        };
+        this.emitting = this.config.emitting;
+        this.particles = [];
+    }
+    burst(count) {
+        for (let i = 0; i < count; i++) {
+            this.spawn();
+        }
+    }
+    update(deltaTime) {
+        let cfg = this.config;
+        if (this.emitting) {
+            this.spawnAccumulator += deltaTime;
+            let interval = 1000 / cfg.spawnRate;
+            while (this.spawnAccumulator >= interval) {
+                this.spawnAccumulator -= interval;
+                this.spawn();
+            }
+        }
+        for (let i = this.particles.length - 1; i >= 0; i--) {
+            let p = this.particles[i];
+            p.age += deltaTime;
+            if (p.age >= p.lifetime) {
+                this.particles[i] = this.particles[this.particles.length - 1];
+                this.particles.pop();
+                continue;
+            }
+            p.vy += cfg.gravity * deltaTime;
+            p.x += p.vx * deltaTime;
+            p.y += p.vy * deltaTime;
+        }
+    }
+    render() {
+        let cfg = this.config;
+        for (let p of this.particles) {
+            let t = p.age / p.lifetime;
+            let cs = cfg.colorStart, ce = cfg.colorEnd;
+            let r = cs.r + (ce.r - cs.r) * t;
+            let g = cs.g + (ce.g - cs.g) * t;
+            let b = cs.b + (ce.b - cs.b) * t;
+            let a = cfg.alphaStart + (cfg.alphaEnd - cfg.alphaStart) * t;
+            let color = new _color__WEBPACK_IMPORTED_MODULE_0__.Color(r, g, b, a);
+            let half = p.size / 2;
+            if (cfg.shape === 'circle') {
+                _draw__WEBPACK_IMPORTED_MODULE_1__.Draw.circle(p.x, p.y, half, color, 8);
+            }
+            else {
+                _draw__WEBPACK_IMPORTED_MODULE_1__.Draw.rect(p.x - half, p.y - half, p.size, p.size, color);
+            }
+        }
+    }
+    get count() {
+        return this.particles.length;
+    }
+    spawn() {
+        if (this.particles.length >= this.config.maxParticles)
+            return;
+        let cfg = this.config;
+        let angle = cfg.direction + (Math.random() - 0.5) * cfg.spread;
+        let speed = rand(cfg.speedMin, cfg.speedMax);
+        this.particles.push({
+            x: this.x,
+            y: this.y,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            size: rand(cfg.sizeMin, cfg.sizeMax),
+            age: 0,
+            lifetime: rand(cfg.lifetimeMin, cfg.lifetimeMax),
+            alive: true,
+        });
+    }
+}
+function rand(min, max) {
+    return min + Math.random() * (max - min);
+}
+
+
+/***/ },
+
 /***/ "./BdvEngine/core/graphics/sprite.ts"
 /*!*******************************************!*\
   !*** ./BdvEngine/core/graphics/sprite.ts ***!
@@ -1701,6 +2433,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _vertex__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./vertex */ "./BdvEngine/core/graphics/vertex.ts");
 /* harmony import */ var _materialManager__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./materialManager */ "./BdvEngine/core/graphics/materialManager.ts");
 /* harmony import */ var _draw__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./draw */ "./BdvEngine/core/graphics/draw.ts");
+/* harmony import */ var _spriteBatcher__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./spriteBatcher */ "./BdvEngine/core/graphics/spriteBatcher.ts");
+
 
 
 
@@ -1749,6 +2483,12 @@ class Sprite {
         this.buffer.upload();
         this.buffer.unbind();
     }
+    get hasCustomShader() {
+        return this.material.hasCustomShader;
+    }
+    pushToBatch(worldMatrix) {
+        _spriteBatcher__WEBPACK_IMPORTED_MODULE_5__.SpriteBatcher.push(this.vertices, this.material, worldMatrix);
+    }
     update(tick) { }
     render(shader, modelMatrix) {
         let activeShader = shader;
@@ -1773,6 +2513,144 @@ class Sprite {
         if (this.material.hasCustomShader) {
             shader.use();
         }
+    }
+}
+
+
+/***/ },
+
+/***/ "./BdvEngine/core/graphics/spriteBatcher.ts"
+/*!**************************************************!*\
+  !*** ./BdvEngine/core/graphics/spriteBatcher.ts ***!
+  \**************************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   SpriteBatcher: () => (/* binding */ SpriteBatcher)
+/* harmony export */ });
+/* harmony import */ var _gl_gl__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../gl/gl */ "./BdvEngine/core/gl/gl.ts");
+/* harmony import */ var _gl_shader__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../gl/shader */ "./BdvEngine/core/gl/shader.ts");
+/* harmony import */ var _draw__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./draw */ "./BdvEngine/core/graphics/draw.ts");
+
+
+
+class SpriteBatcher {
+    static ensureInit() {
+        if (SpriteBatcher.buffer)
+            return;
+        SpriteBatcher.buffer = _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.createBuffer();
+        SpriteBatcher.batchShader = new BatchSpriteShader();
+    }
+    static push(vertices, material, worldMatrix) {
+        let texture = material.diffTexture;
+        if (!texture)
+            return;
+        let shaderName = material.hasCustomShader ? material.shader.name : "__default_batch__";
+        let key = shaderName + ":" + material.diffTextureName;
+        let batch = SpriteBatcher.batches.get(key);
+        if (!batch) {
+            batch = {
+                verts: [],
+                texture: texture,
+                material: material.hasCustomShader ? material : null,
+            };
+            SpriteBatcher.batches.set(key, batch);
+        }
+        let color = material.diffColor;
+        let r = color.rFloat, g = color.gFloat, b = color.bFloat, a = color.aFloat;
+        let m = worldMatrix.mData;
+        let buf = batch.verts;
+        for (let i = 0; i < vertices.length; i++) {
+            let v = vertices[i];
+            let px = v.position.vx, py = v.position.vy, pz = v.position.vz;
+            let wx = m[0] * px + m[4] * py + m[8] * pz + m[12];
+            let wy = m[1] * px + m[5] * py + m[9] * pz + m[13];
+            let wz = m[2] * px + m[6] * py + m[10] * pz + m[14];
+            buf.push(wx, wy, wz, v.texCoords.vx, v.texCoords.vy, r, g, b, a);
+        }
+    }
+    static flush() {
+        if (SpriteBatcher.batches.size === 0)
+            return;
+        SpriteBatcher.ensureInit();
+        SpriteBatcher.batches.forEach((batch, key) => {
+            if (batch.verts.length === 0)
+                return;
+            let shader;
+            if (batch.material && batch.material.hasCustomShader) {
+                shader = batch.material.shader;
+                shader.use();
+                let projLoc = shader.getUniformLocation("u_proj");
+                _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix4fv(projLoc, false, new Float32Array(_draw__WEBPACK_IMPORTED_MODULE_2__.Draw.getProjection().mData));
+                batch.material.applyUniforms(shader);
+            }
+            else {
+                shader = SpriteBatcher.batchShader;
+                shader.use();
+                let projLoc = shader.getUniformLocation("u_proj");
+                _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix4fv(projLoc, false, new Float32Array(_draw__WEBPACK_IMPORTED_MODULE_2__.Draw.getProjection().mData));
+            }
+            batch.texture.activate(0);
+            let diffLoc = shader.getUniformLocation("u_diffuse");
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniform1i(diffLoc, 0);
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bindBuffer(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ARRAY_BUFFER, SpriteBatcher.buffer);
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bufferData(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ARRAY_BUFFER, new Float32Array(batch.verts), _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.DYNAMIC_DRAW);
+            const stride = 9 * 4;
+            let posLoc = shader.getAttribLocation("a_pos");
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.vertexAttribPointer(posLoc, 3, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.FLOAT, false, stride, 0);
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.enableVertexAttribArray(posLoc);
+            let texLoc = shader.getAttribLocation("a_textCoord");
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.vertexAttribPointer(texLoc, 2, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.FLOAT, false, stride, 3 * 4);
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.enableVertexAttribArray(texLoc);
+            let colLoc = shader.getAttribLocation("a_color");
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.vertexAttribPointer(colLoc, 4, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.FLOAT, false, stride, 5 * 4);
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.enableVertexAttribArray(colLoc);
+            let vertexCount = batch.verts.length / 9;
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.drawArrays(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TRIANGLES, 0, vertexCount);
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.disableVertexAttribArray(posLoc);
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.disableVertexAttribArray(texLoc);
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.disableVertexAttribArray(colLoc);
+            batch.verts.length = 0;
+        });
+    }
+}
+SpriteBatcher.batches = new Map();
+SpriteBatcher.buffer = null;
+SpriteBatcher.batchShader = null;
+class BatchSpriteShader extends _gl_shader__WEBPACK_IMPORTED_MODULE_1__.Shader {
+    constructor() {
+        super("batch_sprite");
+        this.load(this.vertSrc(), this.fragSrc());
+    }
+    vertSrc() {
+        return `
+      attribute vec3 a_pos;
+      attribute vec2 a_textCoord;
+      attribute vec4 a_color;
+
+      uniform mat4 u_proj;
+
+      varying vec2 v_textCoord;
+      varying vec4 v_color;
+
+      void main() {
+          gl_Position = u_proj * vec4(a_pos, 1.0);
+          v_textCoord = a_textCoord;
+          v_color = a_color;
+      }`;
+    }
+    fragSrc() {
+        return `
+      precision mediump float;
+      uniform sampler2D u_diffuse;
+
+      varying vec2 v_textCoord;
+      varying vec4 v_color;
+
+      void main() {
+          gl_FragColor = v_color * texture2D(u_diffuse, v_textCoord);
+      }`;
     }
 }
 
@@ -2432,6 +3310,65 @@ class m4x4 {
         m.data[15] = b30 * a03 + b31 * a13 + b32 * a23 + b33 * a33;
         return m;
     }
+    static perspective(fovRadians, aspect, near, far) {
+        let m = new m4x4();
+        let f = 1.0 / Math.tan(fovRadians / 2);
+        let nf = 1.0 / (near - far);
+        m.data[0] = f / aspect;
+        m.data[1] = 0;
+        m.data[2] = 0;
+        m.data[3] = 0;
+        m.data[4] = 0;
+        m.data[5] = f;
+        m.data[6] = 0;
+        m.data[7] = 0;
+        m.data[8] = 0;
+        m.data[9] = 0;
+        m.data[10] = (far + near) * nf;
+        m.data[11] = -1;
+        m.data[12] = 0;
+        m.data[13] = 0;
+        m.data[14] = 2 * far * near * nf;
+        m.data[15] = 0;
+        return m;
+    }
+    static lookAt(eye, target, up) {
+        let m = new m4x4();
+        let zx = eye.vx - target.vx;
+        let zy = eye.vy - target.vy;
+        let zz = eye.vz - target.vz;
+        let zLen = Math.sqrt(zx * zx + zy * zy + zz * zz);
+        zx /= zLen;
+        zy /= zLen;
+        zz /= zLen;
+        let xx = up.vy * zz - up.vz * zy;
+        let xy = up.vz * zx - up.vx * zz;
+        let xz = up.vx * zy - up.vy * zx;
+        let xLen = Math.sqrt(xx * xx + xy * xy + xz * xz);
+        xx /= xLen;
+        xy /= xLen;
+        xz /= xLen;
+        let yx = zy * xz - zz * xy;
+        let yy = zz * xx - zx * xz;
+        let yz = zx * xy - zy * xx;
+        m.data[0] = xx;
+        m.data[1] = yx;
+        m.data[2] = zx;
+        m.data[3] = 0;
+        m.data[4] = xy;
+        m.data[5] = yy;
+        m.data[6] = zy;
+        m.data[7] = 0;
+        m.data[8] = xz;
+        m.data[9] = yz;
+        m.data[10] = zz;
+        m.data[11] = 0;
+        m.data[12] = -(xx * eye.vx + xy * eye.vy + xz * eye.vz);
+        m.data[13] = -(yx * eye.vx + yy * eye.vy + yz * eye.vz);
+        m.data[14] = -(zx * eye.vx + zy * eye.vy + zz * eye.vz);
+        m.data[15] = 1;
+        return m;
+    }
     toFloat32Array() {
         return new Float32Array(this.data);
     }
@@ -3025,94 +3962,119 @@ ZoneManager.registeredZones = {};
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   AnimatedSprite: () => (/* reexport safe */ _core_graphics_animatedSprite__WEBPACK_IMPORTED_MODULE_10__.AnimatedSprite),
-/* harmony export */   AnimatedSpriteComponent: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_31__.AnimatedSpriteComponent),
-/* harmony export */   AnimatedSpriteComponentBuilder: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_31__.AnimatedSpriteComponentBuilder),
-/* harmony export */   AnimatedSpriteComponentData: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_31__.AnimatedSpriteComponentData),
-/* harmony export */   AssetManager: () => (/* reexport safe */ _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_23__.AssetManager),
-/* harmony export */   BaseBehavior: () => (/* reexport safe */ _core_behaviors_baseBehavior__WEBPACK_IMPORTED_MODULE_32__.BaseBehavior),
-/* harmony export */   BaseComponent: () => (/* reexport safe */ _core_components_baseComponent__WEBPACK_IMPORTED_MODULE_28__.BaseComponent),
-/* harmony export */   BehaviorManager: () => (/* reexport safe */ _core_behaviors_behaviorManager__WEBPACK_IMPORTED_MODULE_33__.BehaviorManager),
-/* harmony export */   Color: () => (/* reexport safe */ _core_graphics_color__WEBPACK_IMPORTED_MODULE_7__.Color),
-/* harmony export */   ComponentManager: () => (/* reexport safe */ _core_components_componentManager__WEBPACK_IMPORTED_MODULE_29__.ComponentManager),
-/* harmony export */   DefaultShader: () => (/* reexport safe */ _core_gl_shaders_defaultShader__WEBPACK_IMPORTED_MODULE_5__.DefaultShader),
-/* harmony export */   Draw: () => (/* reexport safe */ _core_graphics_draw__WEBPACK_IMPORTED_MODULE_13__.Draw),
+/* harmony export */   AnimatedSprite: () => (/* reexport safe */ _core_graphics_animatedSprite__WEBPACK_IMPORTED_MODULE_16__.AnimatedSprite),
+/* harmony export */   AnimatedSpriteComponent: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_39__.AnimatedSpriteComponent),
+/* harmony export */   AnimatedSpriteComponentBuilder: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_39__.AnimatedSpriteComponentBuilder),
+/* harmony export */   AnimatedSpriteComponentData: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_39__.AnimatedSpriteComponentData),
+/* harmony export */   AssetManager: () => (/* reexport safe */ _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_31__.AssetManager),
+/* harmony export */   BaseBehavior: () => (/* reexport safe */ _core_behaviors_baseBehavior__WEBPACK_IMPORTED_MODULE_40__.BaseBehavior),
+/* harmony export */   BaseComponent: () => (/* reexport safe */ _core_components_baseComponent__WEBPACK_IMPORTED_MODULE_36__.BaseComponent),
+/* harmony export */   BehaviorManager: () => (/* reexport safe */ _core_behaviors_behaviorManager__WEBPACK_IMPORTED_MODULE_41__.BehaviorManager),
+/* harmony export */   Camera: () => (/* reexport safe */ _core_3d_camera__WEBPACK_IMPORTED_MODULE_4__.Camera),
+/* harmony export */   Color: () => (/* reexport safe */ _core_graphics_color__WEBPACK_IMPORTED_MODULE_13__.Color),
+/* harmony export */   ComponentManager: () => (/* reexport safe */ _core_components_componentManager__WEBPACK_IMPORTED_MODULE_37__.ComponentManager),
+/* harmony export */   DefaultShader: () => (/* reexport safe */ _core_gl_shaders_defaultShader__WEBPACK_IMPORTED_MODULE_11__.DefaultShader),
+/* harmony export */   Draw: () => (/* reexport safe */ _core_graphics_draw__WEBPACK_IMPORTED_MODULE_19__.Draw),
 /* harmony export */   Engine: () => (/* reexport safe */ _core_engine__WEBPACK_IMPORTED_MODULE_1__.Engine),
-/* harmony export */   GLUTools: () => (/* reexport safe */ _core_gl_gl__WEBPACK_IMPORTED_MODULE_3__.GLUTools),
+/* harmony export */   Engine3D: () => (/* reexport safe */ _core_engine3d__WEBPACK_IMPORTED_MODULE_2__.Engine3D),
+/* harmony export */   GLUTools: () => (/* reexport safe */ _core_gl_gl__WEBPACK_IMPORTED_MODULE_9__.GLUTools),
 /* harmony export */   Game: () => (/* reexport safe */ _core_game__WEBPACK_IMPORTED_MODULE_0__.Game),
-/* harmony export */   InputManager: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_22__.InputManager),
-/* harmony export */   KeyboardMovementBehavior: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_34__.KeyboardMovementBehavior),
-/* harmony export */   KeyboardMovementBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_34__.KeyboardMovementBehaviorBuilder),
-/* harmony export */   KeyboardMovementBehaviorData: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_34__.KeyboardMovementBehaviorData),
-/* harmony export */   Keys: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_22__.Keys),
-/* harmony export */   MESSAGE_ASSET_LOADER_LOADED: () => (/* reexport safe */ _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_23__.MESSAGE_ASSET_LOADER_LOADED),
-/* harmony export */   Material: () => (/* reexport safe */ _core_graphics_material__WEBPACK_IMPORTED_MODULE_14__.Material),
-/* harmony export */   MaterialManager: () => (/* reexport safe */ _core_graphics_materialManager__WEBPACK_IMPORTED_MODULE_15__.MaterialManager),
-/* harmony export */   Message: () => (/* reexport safe */ _core_com_message__WEBPACK_IMPORTED_MODULE_20__.Message),
-/* harmony export */   MessageBus: () => (/* reexport safe */ _core_com_messageBus__WEBPACK_IMPORTED_MODULE_21__.MessageBus),
-/* harmony export */   MessagePriority: () => (/* reexport safe */ _core_com_message__WEBPACK_IMPORTED_MODULE_20__.MessagePriority),
-/* harmony export */   MouseContext: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_22__.MouseContext),
-/* harmony export */   RotationBehavior: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_35__.RotationBehavior),
-/* harmony export */   RotationBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_35__.RotationBehaviorBuilder),
-/* harmony export */   RotationBehaviorData: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_35__.RotationBehaviorData),
-/* harmony export */   Scene: () => (/* reexport safe */ _core_world_scene__WEBPACK_IMPORTED_MODULE_25__.Scene),
-/* harmony export */   Shader: () => (/* reexport safe */ _core_gl_shader__WEBPACK_IMPORTED_MODULE_4__.Shader),
-/* harmony export */   SimObject: () => (/* reexport safe */ _core_world_simObject__WEBPACK_IMPORTED_MODULE_24__.SimObject),
-/* harmony export */   Sprite: () => (/* reexport safe */ _core_graphics_sprite__WEBPACK_IMPORTED_MODULE_9__.Sprite),
-/* harmony export */   SpriteComponent: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_30__.SpriteComponent),
-/* harmony export */   SpriteComponentBuilder: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_30__.SpriteComponentBuilder),
-/* harmony export */   SpriteComponentData: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_30__.SpriteComponentData),
-/* harmony export */   Texture: () => (/* reexport safe */ _core_graphics_texture__WEBPACK_IMPORTED_MODULE_11__.Texture),
-/* harmony export */   TextureManager: () => (/* reexport safe */ _core_graphics_textureManager__WEBPACK_IMPORTED_MODULE_12__.TextureManager),
-/* harmony export */   UI: () => (/* reexport safe */ _core_ui_ui__WEBPACK_IMPORTED_MODULE_2__.UI),
-/* harmony export */   Vertex: () => (/* reexport safe */ _core_graphics_vertex__WEBPACK_IMPORTED_MODULE_8__.Vertex),
-/* harmony export */   Zone: () => (/* reexport safe */ _core_world_zone__WEBPACK_IMPORTED_MODULE_26__.Zone),
-/* harmony export */   ZoneManager: () => (/* reexport safe */ _core_world_zoneManager__WEBPACK_IMPORTED_MODULE_27__.ZoneManager),
-/* harmony export */   ZoneState: () => (/* reexport safe */ _core_world_zone__WEBPACK_IMPORTED_MODULE_26__.ZoneState),
-/* harmony export */   gl: () => (/* reexport safe */ _core_gl_gl__WEBPACK_IMPORTED_MODULE_3__.gl),
-/* harmony export */   glAttrInfo: () => (/* reexport safe */ _core_gl_glBuffer__WEBPACK_IMPORTED_MODULE_6__.glAttrInfo),
-/* harmony export */   glBuffer: () => (/* reexport safe */ _core_gl_glBuffer__WEBPACK_IMPORTED_MODULE_6__.glBuffer),
-/* harmony export */   m4x4: () => (/* reexport safe */ _core_utils_m4x4__WEBPACK_IMPORTED_MODULE_18__.m4x4),
-/* harmony export */   transform: () => (/* reexport safe */ _core_utils_transform__WEBPACK_IMPORTED_MODULE_19__.transform),
-/* harmony export */   vec2: () => (/* reexport safe */ _core_utils_vec2__WEBPACK_IMPORTED_MODULE_16__.vec2),
-/* harmony export */   vec3: () => (/* reexport safe */ _core_utils_vec3__WEBPACK_IMPORTED_MODULE_17__.vec3)
+/* harmony export */   InputManager: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_30__.InputManager),
+/* harmony export */   KeyboardMovementBehavior: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_42__.KeyboardMovementBehavior),
+/* harmony export */   KeyboardMovementBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_42__.KeyboardMovementBehaviorBuilder),
+/* harmony export */   KeyboardMovementBehaviorData: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_42__.KeyboardMovementBehaviorData),
+/* harmony export */   Keys: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_30__.Keys),
+/* harmony export */   LitShader: () => (/* reexport safe */ _core_3d_litShader__WEBPACK_IMPORTED_MODULE_7__.LitShader),
+/* harmony export */   MESSAGE_ASSET_LOADER_LOADED: () => (/* reexport safe */ _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_31__.MESSAGE_ASSET_LOADER_LOADED),
+/* harmony export */   Material: () => (/* reexport safe */ _core_graphics_material__WEBPACK_IMPORTED_MODULE_22__.Material),
+/* harmony export */   MaterialManager: () => (/* reexport safe */ _core_graphics_materialManager__WEBPACK_IMPORTED_MODULE_23__.MaterialManager),
+/* harmony export */   Mesh: () => (/* reexport safe */ _core_3d_mesh__WEBPACK_IMPORTED_MODULE_5__.Mesh),
+/* harmony export */   MeshComponent: () => (/* reexport safe */ _core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_8__.MeshComponent),
+/* harmony export */   MeshComponentData: () => (/* reexport safe */ _core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_8__.MeshComponentData),
+/* harmony export */   Message: () => (/* reexport safe */ _core_com_message__WEBPACK_IMPORTED_MODULE_28__.Message),
+/* harmony export */   MessageBus: () => (/* reexport safe */ _core_com_messageBus__WEBPACK_IMPORTED_MODULE_29__.MessageBus),
+/* harmony export */   MessagePriority: () => (/* reexport safe */ _core_com_message__WEBPACK_IMPORTED_MODULE_28__.MessagePriority),
+/* harmony export */   MouseContext: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_30__.MouseContext),
+/* harmony export */   ObjLoader: () => (/* reexport safe */ _core_3d_objLoader__WEBPACK_IMPORTED_MODULE_6__.ObjLoader),
+/* harmony export */   ParticleEmitter: () => (/* reexport safe */ _core_graphics_particleEmitter__WEBPACK_IMPORTED_MODULE_21__.ParticleEmitter),
+/* harmony export */   RotationBehavior: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_43__.RotationBehavior),
+/* harmony export */   RotationBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_43__.RotationBehaviorBuilder),
+/* harmony export */   RotationBehaviorData: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_43__.RotationBehaviorData),
+/* harmony export */   Scene: () => (/* reexport safe */ _core_world_scene__WEBPACK_IMPORTED_MODULE_33__.Scene),
+/* harmony export */   Shader: () => (/* reexport safe */ _core_gl_shader__WEBPACK_IMPORTED_MODULE_10__.Shader),
+/* harmony export */   SimObject: () => (/* reexport safe */ _core_world_simObject__WEBPACK_IMPORTED_MODULE_32__.SimObject),
+/* harmony export */   Sprite: () => (/* reexport safe */ _core_graphics_sprite__WEBPACK_IMPORTED_MODULE_15__.Sprite),
+/* harmony export */   SpriteBatcher: () => (/* reexport safe */ _core_graphics_spriteBatcher__WEBPACK_IMPORTED_MODULE_20__.SpriteBatcher),
+/* harmony export */   SpriteComponent: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_38__.SpriteComponent),
+/* harmony export */   SpriteComponentBuilder: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_38__.SpriteComponentBuilder),
+/* harmony export */   SpriteComponentData: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_38__.SpriteComponentData),
+/* harmony export */   Texture: () => (/* reexport safe */ _core_graphics_texture__WEBPACK_IMPORTED_MODULE_17__.Texture),
+/* harmony export */   TextureManager: () => (/* reexport safe */ _core_graphics_textureManager__WEBPACK_IMPORTED_MODULE_18__.TextureManager),
+/* harmony export */   UI: () => (/* reexport safe */ _core_ui_ui__WEBPACK_IMPORTED_MODULE_3__.UI),
+/* harmony export */   Vertex: () => (/* reexport safe */ _core_graphics_vertex__WEBPACK_IMPORTED_MODULE_14__.Vertex),
+/* harmony export */   Zone: () => (/* reexport safe */ _core_world_zone__WEBPACK_IMPORTED_MODULE_34__.Zone),
+/* harmony export */   ZoneManager: () => (/* reexport safe */ _core_world_zoneManager__WEBPACK_IMPORTED_MODULE_35__.ZoneManager),
+/* harmony export */   ZoneState: () => (/* reexport safe */ _core_world_zone__WEBPACK_IMPORTED_MODULE_34__.ZoneState),
+/* harmony export */   gl: () => (/* reexport safe */ _core_gl_gl__WEBPACK_IMPORTED_MODULE_9__.gl),
+/* harmony export */   glAttrInfo: () => (/* reexport safe */ _core_gl_glBuffer__WEBPACK_IMPORTED_MODULE_12__.glAttrInfo),
+/* harmony export */   glBuffer: () => (/* reexport safe */ _core_gl_glBuffer__WEBPACK_IMPORTED_MODULE_12__.glBuffer),
+/* harmony export */   m4x4: () => (/* reexport safe */ _core_utils_m4x4__WEBPACK_IMPORTED_MODULE_26__.m4x4),
+/* harmony export */   transform: () => (/* reexport safe */ _core_utils_transform__WEBPACK_IMPORTED_MODULE_27__.transform),
+/* harmony export */   vec2: () => (/* reexport safe */ _core_utils_vec2__WEBPACK_IMPORTED_MODULE_24__.vec2),
+/* harmony export */   vec3: () => (/* reexport safe */ _core_utils_vec3__WEBPACK_IMPORTED_MODULE_25__.vec3)
 /* harmony export */ });
 /* harmony import */ var _core_game__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./core/game */ "./BdvEngine/core/game.ts");
 /* harmony import */ var _core_engine__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./core/engine */ "./BdvEngine/core/engine.ts");
-/* harmony import */ var _core_ui_ui__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./core/ui/ui */ "./BdvEngine/core/ui/ui.ts");
-/* harmony import */ var _core_gl_gl__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./core/gl/gl */ "./BdvEngine/core/gl/gl.ts");
-/* harmony import */ var _core_gl_shader__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./core/gl/shader */ "./BdvEngine/core/gl/shader.ts");
-/* harmony import */ var _core_gl_shaders_defaultShader__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./core/gl/shaders/defaultShader */ "./BdvEngine/core/gl/shaders/defaultShader.ts");
-/* harmony import */ var _core_gl_glBuffer__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./core/gl/glBuffer */ "./BdvEngine/core/gl/glBuffer.ts");
-/* harmony import */ var _core_graphics_color__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ./core/graphics/color */ "./BdvEngine/core/graphics/color.ts");
-/* harmony import */ var _core_graphics_vertex__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(/*! ./core/graphics/vertex */ "./BdvEngine/core/graphics/vertex.ts");
-/* harmony import */ var _core_graphics_sprite__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(/*! ./core/graphics/sprite */ "./BdvEngine/core/graphics/sprite.ts");
-/* harmony import */ var _core_graphics_animatedSprite__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(/*! ./core/graphics/animatedSprite */ "./BdvEngine/core/graphics/animatedSprite.ts");
-/* harmony import */ var _core_graphics_texture__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(/*! ./core/graphics/texture */ "./BdvEngine/core/graphics/texture.ts");
-/* harmony import */ var _core_graphics_textureManager__WEBPACK_IMPORTED_MODULE_12__ = __webpack_require__(/*! ./core/graphics/textureManager */ "./BdvEngine/core/graphics/textureManager.ts");
-/* harmony import */ var _core_graphics_draw__WEBPACK_IMPORTED_MODULE_13__ = __webpack_require__(/*! ./core/graphics/draw */ "./BdvEngine/core/graphics/draw.ts");
-/* harmony import */ var _core_graphics_material__WEBPACK_IMPORTED_MODULE_14__ = __webpack_require__(/*! ./core/graphics/material */ "./BdvEngine/core/graphics/material.ts");
-/* harmony import */ var _core_graphics_materialManager__WEBPACK_IMPORTED_MODULE_15__ = __webpack_require__(/*! ./core/graphics/materialManager */ "./BdvEngine/core/graphics/materialManager.ts");
-/* harmony import */ var _core_utils_vec2__WEBPACK_IMPORTED_MODULE_16__ = __webpack_require__(/*! ./core/utils/vec2 */ "./BdvEngine/core/utils/vec2.ts");
-/* harmony import */ var _core_utils_vec3__WEBPACK_IMPORTED_MODULE_17__ = __webpack_require__(/*! ./core/utils/vec3 */ "./BdvEngine/core/utils/vec3.ts");
-/* harmony import */ var _core_utils_m4x4__WEBPACK_IMPORTED_MODULE_18__ = __webpack_require__(/*! ./core/utils/m4x4 */ "./BdvEngine/core/utils/m4x4.ts");
-/* harmony import */ var _core_utils_transform__WEBPACK_IMPORTED_MODULE_19__ = __webpack_require__(/*! ./core/utils/transform */ "./BdvEngine/core/utils/transform.ts");
-/* harmony import */ var _core_com_message__WEBPACK_IMPORTED_MODULE_20__ = __webpack_require__(/*! ./core/com/message */ "./BdvEngine/core/com/message.ts");
-/* harmony import */ var _core_com_messageBus__WEBPACK_IMPORTED_MODULE_21__ = __webpack_require__(/*! ./core/com/messageBus */ "./BdvEngine/core/com/messageBus.ts");
-/* harmony import */ var _core_input_inputManager__WEBPACK_IMPORTED_MODULE_22__ = __webpack_require__(/*! ./core/input/inputManager */ "./BdvEngine/core/input/inputManager.ts");
-/* harmony import */ var _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_23__ = __webpack_require__(/*! ./core/assets/assetManager */ "./BdvEngine/core/assets/assetManager.ts");
-/* harmony import */ var _core_world_simObject__WEBPACK_IMPORTED_MODULE_24__ = __webpack_require__(/*! ./core/world/simObject */ "./BdvEngine/core/world/simObject.ts");
-/* harmony import */ var _core_world_scene__WEBPACK_IMPORTED_MODULE_25__ = __webpack_require__(/*! ./core/world/scene */ "./BdvEngine/core/world/scene.ts");
-/* harmony import */ var _core_world_zone__WEBPACK_IMPORTED_MODULE_26__ = __webpack_require__(/*! ./core/world/zone */ "./BdvEngine/core/world/zone.ts");
-/* harmony import */ var _core_world_zoneManager__WEBPACK_IMPORTED_MODULE_27__ = __webpack_require__(/*! ./core/world/zoneManager */ "./BdvEngine/core/world/zoneManager.ts");
-/* harmony import */ var _core_components_baseComponent__WEBPACK_IMPORTED_MODULE_28__ = __webpack_require__(/*! ./core/components/baseComponent */ "./BdvEngine/core/components/baseComponent.ts");
-/* harmony import */ var _core_components_componentManager__WEBPACK_IMPORTED_MODULE_29__ = __webpack_require__(/*! ./core/components/componentManager */ "./BdvEngine/core/components/componentManager.ts");
-/* harmony import */ var _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_30__ = __webpack_require__(/*! ./core/components/spriteComponent */ "./BdvEngine/core/components/spriteComponent.ts");
-/* harmony import */ var _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_31__ = __webpack_require__(/*! ./core/components/animatedSpriteComponent */ "./BdvEngine/core/components/animatedSpriteComponent.ts");
-/* harmony import */ var _core_behaviors_baseBehavior__WEBPACK_IMPORTED_MODULE_32__ = __webpack_require__(/*! ./core/behaviors/baseBehavior */ "./BdvEngine/core/behaviors/baseBehavior.ts");
-/* harmony import */ var _core_behaviors_behaviorManager__WEBPACK_IMPORTED_MODULE_33__ = __webpack_require__(/*! ./core/behaviors/behaviorManager */ "./BdvEngine/core/behaviors/behaviorManager.ts");
-/* harmony import */ var _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_34__ = __webpack_require__(/*! ./core/behaviors/keyboardMovementBehavior */ "./BdvEngine/core/behaviors/keyboardMovementBehavior.ts");
-/* harmony import */ var _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_35__ = __webpack_require__(/*! ./core/behaviors/rotationBehavior */ "./BdvEngine/core/behaviors/rotationBehavior.ts");
+/* harmony import */ var _core_engine3d__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./core/engine3d */ "./BdvEngine/core/engine3d.ts");
+/* harmony import */ var _core_ui_ui__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./core/ui/ui */ "./BdvEngine/core/ui/ui.ts");
+/* harmony import */ var _core_3d_camera__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./core/3d/camera */ "./BdvEngine/core/3d/camera.ts");
+/* harmony import */ var _core_3d_mesh__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./core/3d/mesh */ "./BdvEngine/core/3d/mesh.ts");
+/* harmony import */ var _core_3d_objLoader__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./core/3d/objLoader */ "./BdvEngine/core/3d/objLoader.ts");
+/* harmony import */ var _core_3d_litShader__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ./core/3d/litShader */ "./BdvEngine/core/3d/litShader.ts");
+/* harmony import */ var _core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(/*! ./core/3d/meshComponent */ "./BdvEngine/core/3d/meshComponent.ts");
+/* harmony import */ var _core_gl_gl__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(/*! ./core/gl/gl */ "./BdvEngine/core/gl/gl.ts");
+/* harmony import */ var _core_gl_shader__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(/*! ./core/gl/shader */ "./BdvEngine/core/gl/shader.ts");
+/* harmony import */ var _core_gl_shaders_defaultShader__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(/*! ./core/gl/shaders/defaultShader */ "./BdvEngine/core/gl/shaders/defaultShader.ts");
+/* harmony import */ var _core_gl_glBuffer__WEBPACK_IMPORTED_MODULE_12__ = __webpack_require__(/*! ./core/gl/glBuffer */ "./BdvEngine/core/gl/glBuffer.ts");
+/* harmony import */ var _core_graphics_color__WEBPACK_IMPORTED_MODULE_13__ = __webpack_require__(/*! ./core/graphics/color */ "./BdvEngine/core/graphics/color.ts");
+/* harmony import */ var _core_graphics_vertex__WEBPACK_IMPORTED_MODULE_14__ = __webpack_require__(/*! ./core/graphics/vertex */ "./BdvEngine/core/graphics/vertex.ts");
+/* harmony import */ var _core_graphics_sprite__WEBPACK_IMPORTED_MODULE_15__ = __webpack_require__(/*! ./core/graphics/sprite */ "./BdvEngine/core/graphics/sprite.ts");
+/* harmony import */ var _core_graphics_animatedSprite__WEBPACK_IMPORTED_MODULE_16__ = __webpack_require__(/*! ./core/graphics/animatedSprite */ "./BdvEngine/core/graphics/animatedSprite.ts");
+/* harmony import */ var _core_graphics_texture__WEBPACK_IMPORTED_MODULE_17__ = __webpack_require__(/*! ./core/graphics/texture */ "./BdvEngine/core/graphics/texture.ts");
+/* harmony import */ var _core_graphics_textureManager__WEBPACK_IMPORTED_MODULE_18__ = __webpack_require__(/*! ./core/graphics/textureManager */ "./BdvEngine/core/graphics/textureManager.ts");
+/* harmony import */ var _core_graphics_draw__WEBPACK_IMPORTED_MODULE_19__ = __webpack_require__(/*! ./core/graphics/draw */ "./BdvEngine/core/graphics/draw.ts");
+/* harmony import */ var _core_graphics_spriteBatcher__WEBPACK_IMPORTED_MODULE_20__ = __webpack_require__(/*! ./core/graphics/spriteBatcher */ "./BdvEngine/core/graphics/spriteBatcher.ts");
+/* harmony import */ var _core_graphics_particleEmitter__WEBPACK_IMPORTED_MODULE_21__ = __webpack_require__(/*! ./core/graphics/particleEmitter */ "./BdvEngine/core/graphics/particleEmitter.ts");
+/* harmony import */ var _core_graphics_material__WEBPACK_IMPORTED_MODULE_22__ = __webpack_require__(/*! ./core/graphics/material */ "./BdvEngine/core/graphics/material.ts");
+/* harmony import */ var _core_graphics_materialManager__WEBPACK_IMPORTED_MODULE_23__ = __webpack_require__(/*! ./core/graphics/materialManager */ "./BdvEngine/core/graphics/materialManager.ts");
+/* harmony import */ var _core_utils_vec2__WEBPACK_IMPORTED_MODULE_24__ = __webpack_require__(/*! ./core/utils/vec2 */ "./BdvEngine/core/utils/vec2.ts");
+/* harmony import */ var _core_utils_vec3__WEBPACK_IMPORTED_MODULE_25__ = __webpack_require__(/*! ./core/utils/vec3 */ "./BdvEngine/core/utils/vec3.ts");
+/* harmony import */ var _core_utils_m4x4__WEBPACK_IMPORTED_MODULE_26__ = __webpack_require__(/*! ./core/utils/m4x4 */ "./BdvEngine/core/utils/m4x4.ts");
+/* harmony import */ var _core_utils_transform__WEBPACK_IMPORTED_MODULE_27__ = __webpack_require__(/*! ./core/utils/transform */ "./BdvEngine/core/utils/transform.ts");
+/* harmony import */ var _core_com_message__WEBPACK_IMPORTED_MODULE_28__ = __webpack_require__(/*! ./core/com/message */ "./BdvEngine/core/com/message.ts");
+/* harmony import */ var _core_com_messageBus__WEBPACK_IMPORTED_MODULE_29__ = __webpack_require__(/*! ./core/com/messageBus */ "./BdvEngine/core/com/messageBus.ts");
+/* harmony import */ var _core_input_inputManager__WEBPACK_IMPORTED_MODULE_30__ = __webpack_require__(/*! ./core/input/inputManager */ "./BdvEngine/core/input/inputManager.ts");
+/* harmony import */ var _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_31__ = __webpack_require__(/*! ./core/assets/assetManager */ "./BdvEngine/core/assets/assetManager.ts");
+/* harmony import */ var _core_world_simObject__WEBPACK_IMPORTED_MODULE_32__ = __webpack_require__(/*! ./core/world/simObject */ "./BdvEngine/core/world/simObject.ts");
+/* harmony import */ var _core_world_scene__WEBPACK_IMPORTED_MODULE_33__ = __webpack_require__(/*! ./core/world/scene */ "./BdvEngine/core/world/scene.ts");
+/* harmony import */ var _core_world_zone__WEBPACK_IMPORTED_MODULE_34__ = __webpack_require__(/*! ./core/world/zone */ "./BdvEngine/core/world/zone.ts");
+/* harmony import */ var _core_world_zoneManager__WEBPACK_IMPORTED_MODULE_35__ = __webpack_require__(/*! ./core/world/zoneManager */ "./BdvEngine/core/world/zoneManager.ts");
+/* harmony import */ var _core_components_baseComponent__WEBPACK_IMPORTED_MODULE_36__ = __webpack_require__(/*! ./core/components/baseComponent */ "./BdvEngine/core/components/baseComponent.ts");
+/* harmony import */ var _core_components_componentManager__WEBPACK_IMPORTED_MODULE_37__ = __webpack_require__(/*! ./core/components/componentManager */ "./BdvEngine/core/components/componentManager.ts");
+/* harmony import */ var _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_38__ = __webpack_require__(/*! ./core/components/spriteComponent */ "./BdvEngine/core/components/spriteComponent.ts");
+/* harmony import */ var _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_39__ = __webpack_require__(/*! ./core/components/animatedSpriteComponent */ "./BdvEngine/core/components/animatedSpriteComponent.ts");
+/* harmony import */ var _core_behaviors_baseBehavior__WEBPACK_IMPORTED_MODULE_40__ = __webpack_require__(/*! ./core/behaviors/baseBehavior */ "./BdvEngine/core/behaviors/baseBehavior.ts");
+/* harmony import */ var _core_behaviors_behaviorManager__WEBPACK_IMPORTED_MODULE_41__ = __webpack_require__(/*! ./core/behaviors/behaviorManager */ "./BdvEngine/core/behaviors/behaviorManager.ts");
+/* harmony import */ var _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_42__ = __webpack_require__(/*! ./core/behaviors/keyboardMovementBehavior */ "./BdvEngine/core/behaviors/keyboardMovementBehavior.ts");
+/* harmony import */ var _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_43__ = __webpack_require__(/*! ./core/behaviors/rotationBehavior */ "./BdvEngine/core/behaviors/rotationBehavior.ts");
+
+
+
+
+
+
+
+
 
 
 
@@ -3153,138 +4115,94 @@ __webpack_require__.r(__webpack_exports__);
 
 /***/ },
 
-/***/ "./example/myGame.ts"
-/*!***************************!*\
-  !*** ./example/myGame.ts ***!
-  \***************************/
+/***/ "./example/my3DGame.ts"
+/*!*****************************!*\
+  !*** ./example/my3DGame.ts ***!
+  \*****************************/
 (__unused_webpack_module, __webpack_exports__, __webpack_require__) {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   MyGame: () => (/* binding */ MyGame)
+/* harmony export */   My3DGame: () => (/* binding */ My3DGame)
 /* harmony export */ });
 /* harmony import */ var _BdvEngine__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../BdvEngine */ "./BdvEngine/index.ts");
+/* harmony import */ var _BdvEngine_core_3d_mesh__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../BdvEngine/core/3d/mesh */ "./BdvEngine/core/3d/mesh.ts");
+/* harmony import */ var _BdvEngine_core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ../BdvEngine/core/3d/meshComponent */ "./BdvEngine/core/3d/meshComponent.ts");
 
-class TintPulseShader extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Shader {
-    constructor() {
-        super("tint_pulse");
-        this.load(`
-      attribute vec3 a_pos;
-      attribute vec2 a_textCoord;
 
-      uniform mat4 u_proj;
-      uniform mat4 u_transf;
 
-      varying vec2 v_textCoord;
-
-      void main() {
-          gl_Position = u_proj * u_transf * vec4(a_pos, 1.0);
-          v_textCoord = a_textCoord;
-      }`, `
-      precision mediump float;
-
-      uniform sampler2D u_diffuse;
-      uniform vec4 u_color;
-      uniform float u_time;
-
-      varying vec2 v_textCoord;
-
-      void main() {
-          vec4 texColor = texture2D(u_diffuse, v_textCoord);
-          float pulse = (sin(u_time * 3.0) + 1.0) * 0.5;
-          vec3 tinted = mix(texColor.rgb, u_color.rgb, pulse * 0.6);
-          float dist = distance(v_textCoord, vec2(0.5, 0.5));
-          float vignette = smoothstep(0.7, 0.2, dist);
-          gl_FragColor = vec4(tinted * vignette, texColor.a * u_color.a);
-      }`);
-    }
-}
-class MyGame extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Game {
+class My3DGame extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Game {
     constructor() {
         super(...arguments);
-        this.drawShapes = true;
-        this.elapsedTime = 0;
+        this.elapsed = 0;
+    }
+    setEngine(engine) {
+        this.engine3d = engine;
     }
     init() {
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.MaterialManager.register(new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Material("duck", "assets/textures/duck.png", _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white()));
-        this.crateMaterial = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Material("crate", "assets/textures/block.png", new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color(255, 100, 200, 255), new TintPulseShader());
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.MaterialManager.register(this.crateMaterial);
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.MaterialManager.register(new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Material("crate", "assets/textures/block.png", _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white()));
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.MaterialManager.register(new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Material("white", "assets/textures/block.png", new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color(200, 200, 220, 255)));
         this.scene = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Scene();
-        let duck = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.SimObject(1, "duck");
-        duck.transform.position.vx = 100;
-        duck.transform.position.vy = 100;
-        duck.transform.scale.vx = 8;
-        duck.transform.scale.vy = 8;
-        let spriteData = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.AnimatedSpriteComponentData();
-        spriteData.name = "duckSprite";
-        spriteData.materialName = "duck";
-        spriteData.frameWidth = 17;
-        spriteData.frameHeight = 12;
-        spriteData.frameCount = 3;
-        spriteData.frameSequence = [0, 1, 2, 1];
-        duck.addComponent(new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.AnimatedSpriteComponent(spriteData));
-        let moveData = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.KeyboardMovementBehaviorData();
-        moveData.name = "mover";
-        moveData.speed = 2.5;
-        this.moveBehavior = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.KeyboardMovementBehavior(moveData);
-        duck.addBehavior(this.moveBehavior);
-        let crate = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.SimObject(2, "crate");
-        crate.transform.position.vx = 500;
-        crate.transform.position.vy = 80;
-        crate.transform.scale.vx = 8;
-        crate.transform.scale.vy = 8;
-        let crateData = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.AnimatedSpriteComponentData();
-        crateData.name = "crateSprite";
-        crateData.materialName = "crate";
-        crateData.frameWidth = 16;
-        crateData.frameHeight = 16;
-        crateData.frameCount = 1;
-        crateData.frameSequence = [0];
-        crate.addComponent(new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.AnimatedSpriteComponent(crateData));
-        this.scene.addObject(duck);
-        this.scene.addObject(crate);
+        let cube = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.SimObject(1, "cube");
+        cube.transform.position.vx = 0;
+        cube.transform.position.vy = 0.5;
+        cube.transform.position.vz = 0;
+        cube.addComponent(new _BdvEngine_core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_2__.MeshComponent(_BdvEngine_core_3d_mesh__WEBPACK_IMPORTED_MODULE_1__.Mesh.cube(), "crate"));
+        this.scene.addObject(cube);
+        let child = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.SimObject(2, "child");
+        child.transform.position.vx = 2;
+        child.transform.position.vy = 0;
+        child.transform.scale = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.vec3(0.4, 0.4, 0.4);
+        child.addComponent(new _BdvEngine_core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_2__.MeshComponent(_BdvEngine_core_3d_mesh__WEBPACK_IMPORTED_MODULE_1__.Mesh.cube(), "crate"));
+        cube.addChild(child);
+        let grandchild = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.SimObject(5, "grandchild");
+        grandchild.transform.position.vx = 1.5;
+        grandchild.transform.scale = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.vec3(0.5, 0.5, 0.5);
+        grandchild.addComponent(new _BdvEngine_core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_2__.MeshComponent(_BdvEngine_core_3d_mesh__WEBPACK_IMPORTED_MODULE_1__.Mesh.sphere(12, 8), "white"));
+        child.addChild(grandchild);
+        let sphere = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.SimObject(3, "sphere");
+        sphere.transform.position.vx = -2;
+        sphere.transform.position.vy = 0.5;
+        sphere.transform.position.vz = 0;
+        sphere.addComponent(new _BdvEngine_core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_2__.MeshComponent(_BdvEngine_core_3d_mesh__WEBPACK_IMPORTED_MODULE_1__.Mesh.sphere(24, 16), "white"));
+        this.scene.addObject(sphere);
+        let ground = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.SimObject(4, "ground");
+        ground.transform.scale = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.vec3(10, 1, 10);
+        ground.addComponent(new _BdvEngine_core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_2__.MeshComponent(_BdvEngine_core_3d_mesh__WEBPACK_IMPORTED_MODULE_1__.Mesh.plane(1), "white"));
+        this.scene.addObject(ground);
         this.scene.load();
         let panel = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.panel(10, 40, {
-            width: "220px",
+            width: "200px",
             padding: "10px",
             background: "rgba(0,0,0,0.7)",
             borderRadius: "6px",
         });
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.heading(panel, "BdvEngine", { color: "#4af" });
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.text(panel, "Arrow keys to move the duck");
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.spacer(panel);
-        let scoreText = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.text(panel, "Score: 0", { fontSize: "16px" });
-        let score = 0;
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.button(panel, "+10 Score", () => {
-            score += 10;
-            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.setText(scoreText, `Score: ${score}`);
-        });
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.spacer(panel);
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.slider(panel, "Speed", 1, 20, 3, (val) => {
-            this.moveBehavior.speed = val;
-        });
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.checkbox(panel, "Show shapes", true, (val) => {
-            this.drawShapes = val;
-        });
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.heading(panel, "BdvEngine 3D", { color: "#4af" });
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.text(panel, "Parent → child → grandchild");
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.text(panel, "hierarchy with Phong lighting");
     }
     update(deltaTime) {
+        this.elapsed += deltaTime / 1000;
         this.scene.update(deltaTime);
-        this.elapsedTime += deltaTime / 1000;
-        this.crateMaterial.setUniform("u_time", this.elapsedTime);
+        let cube = this.scene.getObjectByName("cube");
+        if (cube)
+            cube.transform.rotation.vy = this.elapsed * 0.8;
+        let child = this.scene.getObjectByName("child");
+        if (child)
+            child.transform.rotation.vy = this.elapsed * 3;
+        let grandchild = this.scene.getObjectByName("grandchild");
+        if (grandchild)
+            grandchild.transform.rotation.vx = this.elapsed * 2;
+        if (this.engine3d) {
+            let camDist = 6;
+            let camHeight = 3;
+            let angle = this.elapsed * 0.3;
+            this.engine3d.camera.position = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.vec3(Math.cos(angle) * camDist, camHeight, Math.sin(angle) * camDist);
+            this.engine3d.camera.target = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.vec3(0, 0.5, 0);
+        }
     }
     render(shader) {
         this.scene.render(shader);
-        if (this.drawShapes) {
-            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rect(400, 300, 120, 80, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.red());
-            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rectOutline(400, 300, 120, 80, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white());
-            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.circle(700, 350, 50, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.green());
-            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.circleOutline(700, 350, 60, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white());
-            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.triangle(800, 250, 850, 350, 750, 350, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.blue());
-            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.line(50, 400, 300, 400, new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color(255, 255, 0, 255));
-            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.ray(50, 450, 1, 0.5, 200, new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color(0, 255, 255, 255));
-            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.point(600, 450, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white(), 6);
-        }
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.flush(shader);
     }
 }
 
@@ -3356,12 +4274,12 @@ class MyGame extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Game {
 var __webpack_exports__ = {};
 // This entry needs to be wrapped in an IIFE because it needs to be isolated against other modules in the chunk.
 (() => {
-/*!************************!*\
-  !*** ./example/app.ts ***!
-  \************************/
+/*!**************************!*\
+  !*** ./example/app3d.ts ***!
+  \**************************/
 __webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _BdvEngine__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../BdvEngine */ "./BdvEngine/index.ts");
-/* harmony import */ var _myGame__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./myGame */ "./example/myGame.ts");
+/* harmony import */ var _BdvEngine_core_engine3d__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../BdvEngine/core/engine3d */ "./BdvEngine/core/engine3d.ts");
+/* harmony import */ var _my3DGame__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./my3DGame */ "./example/my3DGame.ts");
 
 
 let engine;
@@ -3369,10 +4287,13 @@ window.onload = () => {
     const canvas = document.createElement("canvas");
     canvas.id = "mainFrame";
     document.body.appendChild(canvas);
-    engine = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Engine(canvas, new _myGame__WEBPACK_IMPORTED_MODULE_1__.MyGame(), {
+    let game = new _my3DGame__WEBPACK_IMPORTED_MODULE_1__.My3DGame();
+    engine = new _BdvEngine_core_engine3d__WEBPACK_IMPORTED_MODULE_0__.Engine3D(canvas, game, {
         targetFps: 60,
         showFps: true,
+        clearColor: [0.1, 0.1, 0.15, 1],
     });
+    game.setEngine(engine);
     engine.start();
 };
 window.onresize = () => {
