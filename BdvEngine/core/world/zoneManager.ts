@@ -17,8 +17,10 @@ export class ZoneManager implements IMessageHandler {
 
   public static init(): void {
     ZoneManager.instance = new ZoneManager();
-    // Temporarily register the test zone.
-    ZoneManager.registeredZones[0] = "assets/zones/testZone.json";
+  }
+
+  public static registerZone(id: number, path: string): void {
+    ZoneManager.registeredZones[id] = path;
   }
 
   public static changeZone(zoneId: number): void {

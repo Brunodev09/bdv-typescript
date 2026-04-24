@@ -1,7 +1,7 @@
 const path = require("path");
 
 module.exports = {
-  entry: "./BdvEngine/app.ts",
+  entry: "./example/app.ts",
   mode: "development",
   devtool: "source-map",
   module: {
@@ -11,7 +11,7 @@ module.exports = {
         use: {
           loader: "ts-loader",
           options: {
-            configFile: path.resolve(__dirname, "BdvEngine/tsconfig.json"),
+            configFile: path.resolve(__dirname, "tsconfig.json"),
           },
         },
         exclude: /node_modules/,

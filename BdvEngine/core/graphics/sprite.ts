@@ -5,6 +5,7 @@ import { Shader } from '../gl/shader';
 import { Material } from './material';
 import { MaterialManager } from './materialManager';
 import { m4x4 } from '../utils/m4x4';
+import { Draw } from './draw';
 
 export class Sprite {
   protected name: string;
@@ -76,24 +77,45 @@ export class Sprite {
   public update(tick: number): void {}
 
   public render(shader: Shader, modelMatrix: m4x4): void {
-    const transformLocation = shader.getUniformLocation("u_transf");
+    // If the material has a custom shader, switch to it and set projection
+    let activeShader = shader;
+    if (this.material.hasCustomShader) {
+      activeShader = this.material.shader!;
+      activeShader.use();
+
+      // Set projection on the custom shader
+      const projLoc = activeShader.getUniformLocation("u_proj");
+      gl.uniformMatrix4fv(projLoc, false, new Float32Array(Draw.getProjection().mData));
+    }
+
+    // Set transform
+    const transformLocation = activeShader.getUniformLocation("u_transf");
     gl.uniformMatrix4fv(
       transformLocation,
       false,
       modelMatrix.toFloat32Array(),
     );
 
-    const colorLocation = shader.getUniformLocation("u_color");
-
+    // Set color
+    const colorLocation = activeShader.getUniformLocation("u_color");
     gl.uniform4fv(colorLocation, this.material.diffColor.toArrayFloat32());
 
+    // Bind texture
     if (this.material.diffTexture) {
       this.material.diffTexture.activate(0);
-      const diffuseLocation = shader.getUniformLocation("u_diffuse");
+      const diffuseLocation = activeShader.getUniformLocation("u_diffuse");
       gl.uniform1i(diffuseLocation, 0);
     }
 
+    // Apply custom uniforms from the material
+    this.material.applyUniforms(activeShader);
+
     this.buffer.bind();
     this.buffer.draw();
+
+    // Restore the default shader if we switched
+    if (this.material.hasCustomShader) {
+      shader.use();
+    }
   }
 }

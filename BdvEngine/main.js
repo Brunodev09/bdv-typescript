@@ -672,15 +672,9 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _assets_assetManager__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./assets/assetManager */ "./BdvEngine/core/assets/assetManager.ts");
 /* harmony import */ var _input_inputManager__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./input/inputManager */ "./BdvEngine/core/input/inputManager.ts");
 /* harmony import */ var _world_zoneManager__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./world/zoneManager */ "./BdvEngine/core/world/zoneManager.ts");
-/* harmony import */ var _graphics_material__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./graphics/material */ "./BdvEngine/core/graphics/material.ts");
-/* harmony import */ var _graphics_materialManager__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ./graphics/materialManager */ "./BdvEngine/core/graphics/materialManager.ts");
-/* harmony import */ var _graphics_color__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(/*! ./graphics/color */ "./BdvEngine/core/graphics/color.ts");
-/* harmony import */ var _utils_m4x4__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(/*! ./utils/m4x4 */ "./BdvEngine/core/utils/m4x4.ts");
-/* harmony import */ var _com_message__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(/*! ./com/message */ "./BdvEngine/core/com/message.ts");
-/* harmony import */ var _com_messageBus__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(/*! ./com/messageBus */ "./BdvEngine/core/com/messageBus.ts");
-
-
-
+/* harmony import */ var _utils_m4x4__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./utils/m4x4 */ "./BdvEngine/core/utils/m4x4.ts");
+/* harmony import */ var _com_messageBus__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ./com/messageBus */ "./BdvEngine/core/com/messageBus.ts");
+/* harmony import */ var _graphics_draw__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(/*! ./graphics/draw */ "./BdvEngine/core/graphics/draw.ts");
 
 
 
@@ -692,58 +686,131 @@ __webpack_require__.r(__webpack_exports__);
 
 
 class Engine {
-    constructor(canvas) {
+    constructor(canvas, game, config) {
+        var _a, _b;
         this.previousTime = 0;
+        this.accumulator = 0;
+        this.frameCount = 0;
+        this.fpsTimer = 0;
+        this.currentFps = 0;
+        this.fpsElement = null;
         this.canvas = canvas;
+        this.game = game;
+        this.targetFps = (_a = config === null || config === void 0 ? void 0 : config.targetFps) !== null && _a !== void 0 ? _a : 60;
+        this.frameInterval = this.targetFps > 0 ? 1000 / this.targetFps : 0;
+        this.showFps = (_b = config === null || config === void 0 ? void 0 : config.showFps) !== null && _b !== void 0 ? _b : false;
+    }
+    get fps() {
+        return this.currentFps;
+    }
+    setTargetFps(fps) {
+        this.targetFps = fps;
+        this.frameInterval = fps > 0 ? 1000 / fps : 0;
     }
     start() {
         _gl_gl__WEBPACK_IMPORTED_MODULE_1__.GLUTools.init(this.canvas);
         _assets_assetManager__WEBPACK_IMPORTED_MODULE_3__.AssetManager.init();
         _input_inputManager__WEBPACK_IMPORTED_MODULE_4__.InputManager.initialize();
         _world_zoneManager__WEBPACK_IMPORTED_MODULE_5__.ZoneManager.init();
-        _com_message__WEBPACK_IMPORTED_MODULE_10__.Message.subscribe("MOUSE_UP", this);
         _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.clearColor(0, 0, 0.3, 1);
         _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.enable(_gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.BLEND);
         _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.blendFunc(_gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.SRC_ALPHA, _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.ONE_MINUS_SRC_ALPHA);
         this.defaultShader = new _gl_shaders_defaultShader__WEBPACK_IMPORTED_MODULE_2__.DefaultShader();
         this.defaultShader.use();
-        _graphics_materialManager__WEBPACK_IMPORTED_MODULE_7__.MaterialManager.register(new _graphics_material__WEBPACK_IMPORTED_MODULE_6__.Material("block", "assets/textures/block.png", _graphics_color__WEBPACK_IMPORTED_MODULE_8__.Color.white()));
-        _graphics_materialManager__WEBPACK_IMPORTED_MODULE_7__.MaterialManager.register(new _graphics_material__WEBPACK_IMPORTED_MODULE_6__.Material("duck", "assets/textures/duck.png", _graphics_color__WEBPACK_IMPORTED_MODULE_8__.Color.white()));
-        this.projectionMatrix = _utils_m4x4__WEBPACK_IMPORTED_MODULE_9__.m4x4.ortho(0, this.canvas.width, this.canvas.height, 0, -100.0, 100.0);
-        _world_zoneManager__WEBPACK_IMPORTED_MODULE_5__.ZoneManager.changeZone(0);
-        this.resize();
-        this.loop();
-    }
-    onMessage(message) {
-        if (message.code === "MOUSE_UP") {
-            let context = message.context;
-            document.title = `Pos: [${context.position.vx},${context.position.vy}]`;
+        this.projectionMatrix = _utils_m4x4__WEBPACK_IMPORTED_MODULE_6__.m4x4.ortho(0, this.canvas.width, this.canvas.height, 0, -100.0, 100.0);
+        if (this.showFps) {
+            this.createFpsOverlay();
         }
+        this.game.init();
+        this.resize();
+        this.previousTime = performance.now();
+        requestAnimationFrame(this.tick.bind(this));
+    }
+    getShader() {
+        return this.defaultShader;
     }
     resize() {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
         _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.viewport(0, 0, _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.canvas.width, _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.canvas.height);
-        this.projectionMatrix = _utils_m4x4__WEBPACK_IMPORTED_MODULE_9__.m4x4.ortho(0, this.canvas.width, this.canvas.height, 0, -100.0, 100.0);
+        this.projectionMatrix = _utils_m4x4__WEBPACK_IMPORTED_MODULE_6__.m4x4.ortho(0, this.canvas.width, this.canvas.height, 0, -100.0, 100.0);
     }
-    loop() {
-        this.update();
-        this.render();
+    tick() {
+        let now = performance.now();
+        let elapsed = now - this.previousTime;
+        if (this.frameInterval > 0) {
+            this.accumulator += elapsed;
+            this.previousTime = now;
+            if (this.accumulator < this.frameInterval) {
+                requestAnimationFrame(this.tick.bind(this));
+                return;
+            }
+            let delta = this.frameInterval;
+            this.accumulator -= this.frameInterval;
+            if (this.accumulator > this.frameInterval * 3) {
+                this.accumulator = 0;
+            }
+            this.updateFpsCounter(delta);
+            this.update(delta);
+            this.render();
+        }
+        else {
+            this.previousTime = now;
+            this.updateFpsCounter(elapsed);
+            this.update(elapsed);
+            this.render();
+        }
+        requestAnimationFrame(this.tick.bind(this));
     }
-    update() {
-        let delta = performance.now() - this.previousTime;
-        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.clear(_gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.COLOR_BUFFER_BIT);
-        _com_messageBus__WEBPACK_IMPORTED_MODULE_11__.MessageBus.update(delta);
+    updateFpsCounter(delta) {
+        this.frameCount++;
+        this.fpsTimer += delta;
+        if (this.fpsTimer >= 1000) {
+            this.currentFps = this.frameCount;
+            this.frameCount = 0;
+            this.fpsTimer -= 1000;
+            if (this.fpsElement) {
+                this.fpsElement.textContent = `${this.currentFps} FPS`;
+            }
+        }
+    }
+    update(delta) {
+        _com_messageBus__WEBPACK_IMPORTED_MODULE_7__.MessageBus.update(delta);
+        this.game.update(delta);
         _world_zoneManager__WEBPACK_IMPORTED_MODULE_5__.ZoneManager.update(delta);
-        this.previousTime = performance.now();
     }
     render() {
         _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.clear(_gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.COLOR_BUFFER_BIT);
-        _world_zoneManager__WEBPACK_IMPORTED_MODULE_5__.ZoneManager.render(this.defaultShader);
         let projectionPosition = this.defaultShader.getUniformLocation("u_proj");
         _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.uniformMatrix4fv(projectionPosition, false, new Float32Array(this.projectionMatrix.mData));
-        requestAnimationFrame(this.loop.bind(this));
+        _graphics_draw__WEBPACK_IMPORTED_MODULE_8__.Draw.setProjection(this.projectionMatrix);
+        this.game.render(this.defaultShader);
+        _world_zoneManager__WEBPACK_IMPORTED_MODULE_5__.ZoneManager.render(this.defaultShader);
     }
+    createFpsOverlay() {
+        this.fpsElement = document.createElement("div");
+        this.fpsElement.style.cssText =
+            "position:fixed;top:4px;left:4px;color:#0f0;font:bold 14px monospace;" +
+                "background:rgba(0,0,0,0.6);padding:2px 6px;pointer-events:none;z-index:9999;";
+        this.fpsElement.textContent = "0 FPS";
+        document.body.appendChild(this.fpsElement);
+    }
+}
+
+
+/***/ },
+
+/***/ "./BdvEngine/core/game.ts"
+/*!********************************!*\
+  !*** ./BdvEngine/core/game.ts ***!
+  \********************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   Game: () => (/* binding */ Game)
+/* harmony export */ });
+class Game {
 }
 
 
@@ -1244,6 +1311,189 @@ class Color {
 
 /***/ },
 
+/***/ "./BdvEngine/core/graphics/draw.ts"
+/*!*****************************************!*\
+  !*** ./BdvEngine/core/graphics/draw.ts ***!
+  \*****************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   Draw: () => (/* binding */ Draw)
+/* harmony export */ });
+/* harmony import */ var _gl_gl__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../gl/gl */ "./BdvEngine/core/gl/gl.ts");
+/* harmony import */ var _gl_shader__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../gl/shader */ "./BdvEngine/core/gl/shader.ts");
+/* harmony import */ var _utils_m4x4__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ../utils/m4x4 */ "./BdvEngine/core/utils/m4x4.ts");
+
+
+
+class Draw {
+    static setProjection(proj) {
+        Draw.projectionMatrix = proj;
+    }
+    static getProjection() {
+        return Draw.projectionMatrix;
+    }
+    static ensureInit() {
+        if (Draw.whiteTexture)
+            return;
+        Draw.whiteTexture = _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.createTexture();
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bindTexture(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TEXTURE_2D, Draw.whiteTexture);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.texImage2D(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TEXTURE_2D, 0, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.RGBA, 1, 1, 0, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.RGBA, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.texParameteri(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TEXTURE_2D, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TEXTURE_MIN_FILTER, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.NEAREST);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.texParameteri(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TEXTURE_2D, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TEXTURE_MAG_FILTER, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.NEAREST);
+        Draw.triBuf = _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.createBuffer();
+        Draw.lineBuf = _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.createBuffer();
+        Draw.batchShader = new BatchColorShader();
+    }
+    static pushVert(buf, x, y, z, c) {
+        buf.push(x, y, z, c.rFloat, c.gFloat, c.bFloat, c.aFloat);
+    }
+    static rect(x, y, w, h, color) {
+        let b = Draw.triVerts, c = color;
+        Draw.pushVert(b, x, y, 0, c);
+        Draw.pushVert(b, x, y + h, 0, c);
+        Draw.pushVert(b, x + w, y + h, 0, c);
+        Draw.pushVert(b, x + w, y + h, 0, c);
+        Draw.pushVert(b, x + w, y, 0, c);
+        Draw.pushVert(b, x, y, 0, c);
+    }
+    static rectOutline(x, y, w, h, color) {
+        Draw.line(x, y, x + w, y, color);
+        Draw.line(x + w, y, x + w, y + h, color);
+        Draw.line(x + w, y + h, x, y + h, color);
+        Draw.line(x, y + h, x, y, color);
+    }
+    static circle(cx, cy, radius, color, segments = 32) {
+        let b = Draw.triVerts;
+        for (let i = 0; i < segments; i++) {
+            let a0 = (i / segments) * Math.PI * 2;
+            let a1 = ((i + 1) / segments) * Math.PI * 2;
+            Draw.pushVert(b, cx, cy, 0, color);
+            Draw.pushVert(b, cx + Math.cos(a0) * radius, cy + Math.sin(a0) * radius, 0, color);
+            Draw.pushVert(b, cx + Math.cos(a1) * radius, cy + Math.sin(a1) * radius, 0, color);
+        }
+    }
+    static circleOutline(cx, cy, radius, color, segments = 32) {
+        for (let i = 0; i < segments; i++) {
+            let a0 = (i / segments) * Math.PI * 2;
+            let a1 = ((i + 1) / segments) * Math.PI * 2;
+            Draw.line(cx + Math.cos(a0) * radius, cy + Math.sin(a0) * radius, cx + Math.cos(a1) * radius, cy + Math.sin(a1) * radius, color);
+        }
+    }
+    static triangle(x1, y1, x2, y2, x3, y3, color) {
+        let b = Draw.triVerts;
+        Draw.pushVert(b, x1, y1, 0, color);
+        Draw.pushVert(b, x2, y2, 0, color);
+        Draw.pushVert(b, x3, y3, 0, color);
+    }
+    static triangleOutline(x1, y1, x2, y2, x3, y3, color) {
+        Draw.line(x1, y1, x2, y2, color);
+        Draw.line(x2, y2, x3, y3, color);
+        Draw.line(x3, y3, x1, y1, color);
+    }
+    static point(x, y, color, size = 4) {
+        let h = size / 2;
+        Draw.rect(x - h, y - h, size, size, color);
+    }
+    static line(x1, y1, x2, y2, color) {
+        let b = Draw.lineVerts;
+        Draw.pushVert(b, x1, y1, 0, color);
+        Draw.pushVert(b, x2, y2, 0, color);
+    }
+    static ray(ox, oy, dirX, dirY, length, color) {
+        let mag = Math.sqrt(dirX * dirX + dirY * dirY);
+        if (mag === 0)
+            return;
+        Draw.line(ox, oy, ox + (dirX / mag) * length, oy + (dirY / mag) * length, color);
+    }
+    static polygon(points, color) {
+        for (let i = 0; i < points.length; i++) {
+            let [x1, y1] = points[i];
+            let [x2, y2] = points[(i + 1) % points.length];
+            Draw.line(x1, y1, x2, y2, color);
+        }
+    }
+    static polygonFilled(points, color) {
+        if (points.length < 3)
+            return;
+        for (let i = 1; i < points.length - 1; i++) {
+            Draw.triangle(points[0][0], points[0][1], points[i][0], points[i][1], points[i + 1][0], points[i + 1][1], color);
+        }
+    }
+    static flush(parentShader) {
+        if (Draw.triVerts.length === 0 && Draw.lineVerts.length === 0)
+            return;
+        Draw.ensureInit();
+        let shader = Draw.batchShader;
+        shader.use();
+        let projLoc = shader.getUniformLocation("u_proj");
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix4fv(projLoc, false, new Float32Array(Draw.projectionMatrix.mData));
+        if (Draw.triVerts.length > 0) {
+            Draw.submitBatch(shader, Draw.triBuf, Draw.triVerts, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TRIANGLES);
+            Draw.triVerts.length = 0;
+        }
+        if (Draw.lineVerts.length > 0) {
+            Draw.submitBatch(shader, Draw.lineBuf, Draw.lineVerts, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.LINES);
+            Draw.lineVerts.length = 0;
+        }
+        parentShader.use();
+    }
+    static submitBatch(shader, buffer, verts, mode) {
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bindBuffer(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ARRAY_BUFFER, buffer);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bufferData(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ARRAY_BUFFER, new Float32Array(verts), _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.DYNAMIC_DRAW);
+        const stride = 7 * 4;
+        let posLoc = shader.getAttribLocation("a_pos");
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.vertexAttribPointer(posLoc, 3, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.FLOAT, false, stride, 0);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.enableVertexAttribArray(posLoc);
+        let colLoc = shader.getAttribLocation("a_color");
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.vertexAttribPointer(colLoc, 4, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.FLOAT, false, stride, 3 * 4);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.enableVertexAttribArray(colLoc);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.drawArrays(mode, 0, verts.length / 7);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.disableVertexAttribArray(posLoc);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.disableVertexAttribArray(colLoc);
+    }
+}
+Draw.triVerts = [];
+Draw.lineVerts = [];
+Draw.whiteTexture = null;
+Draw.triBuf = null;
+Draw.lineBuf = null;
+Draw.batchShader = null;
+Draw.projectionMatrix = _utils_m4x4__WEBPACK_IMPORTED_MODULE_2__.m4x4.identity();
+class BatchColorShader extends _gl_shader__WEBPACK_IMPORTED_MODULE_1__.Shader {
+    constructor() {
+        super("batch_color");
+        this.load(this.vertSrc(), this.fragSrc());
+    }
+    vertSrc() {
+        return `
+      attribute vec3 a_pos;
+      attribute vec4 a_color;
+
+      uniform mat4 u_proj;
+
+      varying vec4 v_color;
+
+      void main() {
+          gl_Position = u_proj * vec4(a_pos, 1.0);
+          v_color = a_color;
+      }`;
+    }
+    fragSrc() {
+        return `
+      precision mediump float;
+      varying vec4 v_color;
+
+      void main() {
+          gl_FragColor = v_color;
+      }`;
+    }
+}
+
+
+/***/ },
+
 /***/ "./BdvEngine/core/graphics/material.ts"
 /*!*********************************************!*\
   !*** ./BdvEngine/core/graphics/material.ts ***!
@@ -1254,15 +1504,19 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   Material: () => (/* binding */ Material)
 /* harmony export */ });
-/* harmony import */ var _textureManager__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./textureManager */ "./BdvEngine/core/graphics/textureManager.ts");
+/* harmony import */ var _gl_gl__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../gl/gl */ "./BdvEngine/core/gl/gl.ts");
+/* harmony import */ var _textureManager__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./textureManager */ "./BdvEngine/core/graphics/textureManager.ts");
+
 
 class Material {
-    constructor(name, diffuseTextureName, color) {
+    constructor(name, diffuseTextureName, color, shader) {
+        this.uniforms = new Map();
         this.name = name;
         this.diffuseTextureName = diffuseTextureName;
         this.color = color;
+        this.customShader = shader || null;
         if (this.diffuseTextureName) {
-            this.diffuseTexture = _textureManager__WEBPACK_IMPORTED_MODULE_0__.TextureManager.getTexture(this.diffuseTextureName);
+            this.diffuseTexture = _textureManager__WEBPACK_IMPORTED_MODULE_1__.TextureManager.getTexture(this.diffuseTextureName);
         }
     }
     get materialName() {
@@ -1276,11 +1530,11 @@ class Material {
     }
     set diffTextureName(value) {
         if (this.diffuseTexture) {
-            _textureManager__WEBPACK_IMPORTED_MODULE_0__.TextureManager.flushTexture(this.diffuseTextureName);
+            _textureManager__WEBPACK_IMPORTED_MODULE_1__.TextureManager.flushTexture(this.diffuseTextureName);
         }
         this.diffuseTextureName = value;
         if (this.diffuseTextureName) {
-            this.diffuseTexture = _textureManager__WEBPACK_IMPORTED_MODULE_0__.TextureManager.getTexture(this.diffuseTextureName);
+            this.diffuseTexture = _textureManager__WEBPACK_IMPORTED_MODULE_1__.TextureManager.getTexture(this.diffuseTextureName);
         }
     }
     get diffColor() {
@@ -1289,8 +1543,79 @@ class Material {
     set diffColor(color) {
         this.color = color;
     }
+    get hasCustomShader() {
+        return this.customShader !== null;
+    }
+    get shader() {
+        return this.customShader;
+    }
+    setUniform(name, value) {
+        this.uniforms.set(name, value);
+    }
+    getUniform(name) {
+        return this.uniforms.get(name);
+    }
+    applyUniforms(shader) {
+        this.uniforms.forEach((value, name) => {
+            let loc;
+            try {
+                loc = shader.getUniformLocation(name);
+            }
+            catch (_a) {
+                return;
+            }
+            if (typeof value === 'number') {
+                _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniform1f(loc, value);
+            }
+            else if (value instanceof Float32Array) {
+                switch (value.length) {
+                    case 2:
+                        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniform2fv(loc, value);
+                        break;
+                    case 3:
+                        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniform3fv(loc, value);
+                        break;
+                    case 4:
+                        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniform4fv(loc, value);
+                        break;
+                    case 9:
+                        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix3fv(loc, false, value);
+                        break;
+                    case 16:
+                        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix4fv(loc, false, value);
+                        break;
+                    default:
+                        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniform1fv(loc, value);
+                        break;
+                }
+            }
+            else if (Array.isArray(value)) {
+                let arr = new Float32Array(value);
+                switch (arr.length) {
+                    case 2:
+                        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniform2fv(loc, arr);
+                        break;
+                    case 3:
+                        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniform3fv(loc, arr);
+                        break;
+                    case 4:
+                        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniform4fv(loc, arr);
+                        break;
+                    case 9:
+                        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix3fv(loc, false, arr);
+                        break;
+                    case 16:
+                        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix4fv(loc, false, arr);
+                        break;
+                    default:
+                        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniform1fv(loc, arr);
+                        break;
+                }
+            }
+        });
+    }
     destructor() {
-        _textureManager__WEBPACK_IMPORTED_MODULE_0__.TextureManager.flushTexture(this.diffuseTextureName);
+        _textureManager__WEBPACK_IMPORTED_MODULE_1__.TextureManager.flushTexture(this.diffuseTextureName);
         this.diffuseTexture = undefined;
     }
 }
@@ -1375,6 +1700,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _gl_glBuffer__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../gl/glBuffer */ "./BdvEngine/core/gl/glBuffer.ts");
 /* harmony import */ var _vertex__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./vertex */ "./BdvEngine/core/graphics/vertex.ts");
 /* harmony import */ var _materialManager__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./materialManager */ "./BdvEngine/core/graphics/materialManager.ts");
+/* harmony import */ var _draw__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./draw */ "./BdvEngine/core/graphics/draw.ts");
+
 
 
 
@@ -1424,17 +1751,28 @@ class Sprite {
     }
     update(tick) { }
     render(shader, modelMatrix) {
-        const transformLocation = shader.getUniformLocation("u_transf");
+        let activeShader = shader;
+        if (this.material.hasCustomShader) {
+            activeShader = this.material.shader;
+            activeShader.use();
+            const projLoc = activeShader.getUniformLocation("u_proj");
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix4fv(projLoc, false, new Float32Array(_draw__WEBPACK_IMPORTED_MODULE_4__.Draw.getProjection().mData));
+        }
+        const transformLocation = activeShader.getUniformLocation("u_transf");
         _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix4fv(transformLocation, false, modelMatrix.toFloat32Array());
-        const colorLocation = shader.getUniformLocation("u_color");
+        const colorLocation = activeShader.getUniformLocation("u_color");
         _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniform4fv(colorLocation, this.material.diffColor.toArrayFloat32());
         if (this.material.diffTexture) {
             this.material.diffTexture.activate(0);
-            const diffuseLocation = shader.getUniformLocation("u_diffuse");
+            const diffuseLocation = activeShader.getUniformLocation("u_diffuse");
             _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniform1i(diffuseLocation, 0);
         }
+        this.material.applyUniforms(activeShader);
         this.buffer.bind();
         this.buffer.draw();
+        if (this.material.hasCustomShader) {
+            shader.use();
+        }
     }
 }
 
@@ -1742,6 +2080,218 @@ __webpack_require__.r(__webpack_exports__);
 
 
 
+
+
+/***/ },
+
+/***/ "./BdvEngine/core/ui/ui.ts"
+/*!*********************************!*\
+  !*** ./BdvEngine/core/ui/ui.ts ***!
+  \*********************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   UI: () => (/* binding */ UI)
+/* harmony export */ });
+class UI {
+    static ensureRoot() {
+        if (!UI.root) {
+            UI.root = document.createElement("div");
+            UI.root.style.cssText =
+                "position:fixed;top:0;left:0;width:100%;height:100%;" +
+                    "pointer-events:none;z-index:1000;overflow:hidden;";
+            document.body.appendChild(UI.root);
+        }
+        return UI.root;
+    }
+    static applyStyles(el, styles) {
+        if (!styles)
+            return;
+        for (let key in styles) {
+            el.style[key] = styles[key];
+        }
+    }
+    static clear() {
+        if (UI.root) {
+            UI.root.innerHTML = "";
+        }
+    }
+    static remove(element) {
+        var _a;
+        (_a = element.parentElement) === null || _a === void 0 ? void 0 : _a.removeChild(element);
+    }
+    static panel(x, y, styles, parent) {
+        let el = document.createElement("div");
+        el.style.cssText =
+            `position:absolute;left:${x}px;top:${y}px;pointer-events:auto;`;
+        UI.applyStyles(el, styles);
+        (parent || UI.ensureRoot()).appendChild(el);
+        return el;
+    }
+    static text(parent, content, styles) {
+        let el = document.createElement("div");
+        el.textContent = content;
+        el.style.cssText = "color:white;font:14px sans-serif;pointer-events:none;";
+        UI.applyStyles(el, styles);
+        parent.appendChild(el);
+        return el;
+    }
+    static heading(parent, content, styles) {
+        return UI.text(parent, content, Object.assign({ fontSize: "24px", fontWeight: "bold", marginBottom: "8px" }, styles));
+    }
+    static setText(element, content) {
+        element.textContent = content;
+    }
+    static button(parent, label, onClick, styles) {
+        let el = document.createElement("button");
+        el.textContent = label;
+        el.style.cssText =
+            "padding:6px 14px;font:14px sans-serif;cursor:pointer;pointer-events:auto;" +
+                "border:1px solid #555;background:#333;color:white;border-radius:3px;margin:2px;";
+        el.addEventListener("click", (e) => {
+            e.stopPropagation();
+            onClick();
+        });
+        UI.applyStyles(el, styles);
+        parent.appendChild(el);
+        return el;
+    }
+    static checkbox(parent, label, checked, onChange, styles) {
+        let wrapper = document.createElement("label");
+        wrapper.style.cssText =
+            "display:flex;align-items:center;gap:6px;color:white;font:14px sans-serif;" +
+                "pointer-events:auto;cursor:pointer;margin:2px 0;";
+        UI.applyStyles(wrapper, styles);
+        let input = document.createElement("input");
+        input.type = "checkbox";
+        input.checked = checked;
+        input.addEventListener("change", (e) => {
+            e.stopPropagation();
+            onChange(input.checked);
+        });
+        let span = document.createElement("span");
+        span.textContent = label;
+        wrapper.appendChild(input);
+        wrapper.appendChild(span);
+        parent.appendChild(wrapper);
+        return wrapper;
+    }
+    static slider(parent, label, min, max, value, onChange, styles) {
+        let wrapper = document.createElement("div");
+        wrapper.style.cssText =
+            "display:flex;align-items:center;gap:6px;color:white;font:14px sans-serif;" +
+                "pointer-events:auto;margin:2px 0;";
+        UI.applyStyles(wrapper, styles);
+        let span = document.createElement("span");
+        span.textContent = label;
+        let input = document.createElement("input");
+        input.type = "range";
+        input.min = String(min);
+        input.max = String(max);
+        input.value = String(value);
+        input.style.cssText = "flex:1;cursor:pointer;";
+        let valDisplay = document.createElement("span");
+        valDisplay.textContent = String(value);
+        valDisplay.style.minWidth = "30px";
+        input.addEventListener("input", (e) => {
+            e.stopPropagation();
+            let v = Number(input.value);
+            valDisplay.textContent = String(v);
+            onChange(v);
+        });
+        wrapper.appendChild(span);
+        wrapper.appendChild(input);
+        wrapper.appendChild(valDisplay);
+        parent.appendChild(wrapper);
+        return wrapper;
+    }
+    static input(parent, placeholder, onChange, styles) {
+        let el = document.createElement("input");
+        el.type = "text";
+        el.placeholder = placeholder;
+        el.style.cssText =
+            "padding:4px 8px;font:14px sans-serif;pointer-events:auto;" +
+                "border:1px solid #555;background:#222;color:white;border-radius:3px;margin:2px;";
+        el.addEventListener("input", (e) => {
+            e.stopPropagation();
+            onChange(el.value);
+        });
+        el.addEventListener("keydown", (e) => e.stopPropagation());
+        el.addEventListener("keyup", (e) => e.stopPropagation());
+        UI.applyStyles(el, styles);
+        parent.appendChild(el);
+        return el;
+    }
+    static select(parent, options, selected, onChange, styles) {
+        let el = document.createElement("select");
+        el.style.cssText =
+            "padding:4px 8px;font:14px sans-serif;pointer-events:auto;" +
+                "border:1px solid #555;background:#222;color:white;border-radius:3px;margin:2px;";
+        for (let i = 0; i < options.length; i++) {
+            let opt = document.createElement("option");
+            opt.value = String(i);
+            opt.textContent = options[i];
+            if (i === selected)
+                opt.selected = true;
+            el.appendChild(opt);
+        }
+        el.addEventListener("change", (e) => {
+            e.stopPropagation();
+            onChange(el.selectedIndex, options[el.selectedIndex]);
+        });
+        UI.applyStyles(el, styles);
+        parent.appendChild(el);
+        return el;
+    }
+    static row(parent, styles) {
+        let el = document.createElement("div");
+        el.style.cssText = "display:flex;flex-direction:row;gap:4px;align-items:center;";
+        UI.applyStyles(el, styles);
+        parent.appendChild(el);
+        return el;
+    }
+    static column(parent, styles) {
+        let el = document.createElement("div");
+        el.style.cssText = "display:flex;flex-direction:column;gap:4px;";
+        UI.applyStyles(el, styles);
+        parent.appendChild(el);
+        return el;
+    }
+    static spacer(parent, height = 8) {
+        let el = document.createElement("div");
+        el.style.height = `${height}px`;
+        parent.appendChild(el);
+        return el;
+    }
+    static image(parent, src, styles) {
+        let el = document.createElement("img");
+        el.src = src;
+        el.style.cssText = "pointer-events:none;";
+        UI.applyStyles(el, styles);
+        parent.appendChild(el);
+        return el;
+    }
+    static progressBar(parent, value, styles) {
+        let container = document.createElement("div");
+        container.style.cssText =
+            "width:100%;height:16px;background:#222;border:1px solid #555;border-radius:3px;overflow:hidden;margin:2px 0;";
+        UI.applyStyles(container, styles);
+        let fill = document.createElement("div");
+        fill.style.cssText =
+            `width:${Math.max(0, Math.min(100, value))}%;height:100%;background:#4a4;transition:width 0.1s;`;
+        container.appendChild(fill);
+        parent.appendChild(container);
+        return {
+            container,
+            fill,
+            setValue: (v) => {
+                fill.style.width = `${Math.max(0, Math.min(100, v))}%`;
+            },
+        };
+    }
+}
+UI.root = null;
 
 
 /***/ },
@@ -2391,7 +2941,9 @@ class ZoneManager {
     constructor() { }
     static init() {
         ZoneManager.instance = new ZoneManager();
-        ZoneManager.registeredZones[0] = "assets/zones/testZone.json";
+    }
+    static registerZone(id, path) {
+        ZoneManager.registeredZones[id] = path;
     }
     static changeZone(zoneId) {
         if (ZoneManager.currentZone) {
@@ -2463,6 +3015,280 @@ ZoneManager.globalZoneId = -1;
 ZoneManager.registeredZones = {};
 
 
+/***/ },
+
+/***/ "./BdvEngine/index.ts"
+/*!****************************!*\
+  !*** ./BdvEngine/index.ts ***!
+  \****************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   AnimatedSprite: () => (/* reexport safe */ _core_graphics_animatedSprite__WEBPACK_IMPORTED_MODULE_10__.AnimatedSprite),
+/* harmony export */   AnimatedSpriteComponent: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_31__.AnimatedSpriteComponent),
+/* harmony export */   AnimatedSpriteComponentBuilder: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_31__.AnimatedSpriteComponentBuilder),
+/* harmony export */   AnimatedSpriteComponentData: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_31__.AnimatedSpriteComponentData),
+/* harmony export */   AssetManager: () => (/* reexport safe */ _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_23__.AssetManager),
+/* harmony export */   BaseBehavior: () => (/* reexport safe */ _core_behaviors_baseBehavior__WEBPACK_IMPORTED_MODULE_32__.BaseBehavior),
+/* harmony export */   BaseComponent: () => (/* reexport safe */ _core_components_baseComponent__WEBPACK_IMPORTED_MODULE_28__.BaseComponent),
+/* harmony export */   BehaviorManager: () => (/* reexport safe */ _core_behaviors_behaviorManager__WEBPACK_IMPORTED_MODULE_33__.BehaviorManager),
+/* harmony export */   Color: () => (/* reexport safe */ _core_graphics_color__WEBPACK_IMPORTED_MODULE_7__.Color),
+/* harmony export */   ComponentManager: () => (/* reexport safe */ _core_components_componentManager__WEBPACK_IMPORTED_MODULE_29__.ComponentManager),
+/* harmony export */   DefaultShader: () => (/* reexport safe */ _core_gl_shaders_defaultShader__WEBPACK_IMPORTED_MODULE_5__.DefaultShader),
+/* harmony export */   Draw: () => (/* reexport safe */ _core_graphics_draw__WEBPACK_IMPORTED_MODULE_13__.Draw),
+/* harmony export */   Engine: () => (/* reexport safe */ _core_engine__WEBPACK_IMPORTED_MODULE_1__.Engine),
+/* harmony export */   GLUTools: () => (/* reexport safe */ _core_gl_gl__WEBPACK_IMPORTED_MODULE_3__.GLUTools),
+/* harmony export */   Game: () => (/* reexport safe */ _core_game__WEBPACK_IMPORTED_MODULE_0__.Game),
+/* harmony export */   InputManager: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_22__.InputManager),
+/* harmony export */   KeyboardMovementBehavior: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_34__.KeyboardMovementBehavior),
+/* harmony export */   KeyboardMovementBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_34__.KeyboardMovementBehaviorBuilder),
+/* harmony export */   KeyboardMovementBehaviorData: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_34__.KeyboardMovementBehaviorData),
+/* harmony export */   Keys: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_22__.Keys),
+/* harmony export */   MESSAGE_ASSET_LOADER_LOADED: () => (/* reexport safe */ _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_23__.MESSAGE_ASSET_LOADER_LOADED),
+/* harmony export */   Material: () => (/* reexport safe */ _core_graphics_material__WEBPACK_IMPORTED_MODULE_14__.Material),
+/* harmony export */   MaterialManager: () => (/* reexport safe */ _core_graphics_materialManager__WEBPACK_IMPORTED_MODULE_15__.MaterialManager),
+/* harmony export */   Message: () => (/* reexport safe */ _core_com_message__WEBPACK_IMPORTED_MODULE_20__.Message),
+/* harmony export */   MessageBus: () => (/* reexport safe */ _core_com_messageBus__WEBPACK_IMPORTED_MODULE_21__.MessageBus),
+/* harmony export */   MessagePriority: () => (/* reexport safe */ _core_com_message__WEBPACK_IMPORTED_MODULE_20__.MessagePriority),
+/* harmony export */   MouseContext: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_22__.MouseContext),
+/* harmony export */   RotationBehavior: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_35__.RotationBehavior),
+/* harmony export */   RotationBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_35__.RotationBehaviorBuilder),
+/* harmony export */   RotationBehaviorData: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_35__.RotationBehaviorData),
+/* harmony export */   Scene: () => (/* reexport safe */ _core_world_scene__WEBPACK_IMPORTED_MODULE_25__.Scene),
+/* harmony export */   Shader: () => (/* reexport safe */ _core_gl_shader__WEBPACK_IMPORTED_MODULE_4__.Shader),
+/* harmony export */   SimObject: () => (/* reexport safe */ _core_world_simObject__WEBPACK_IMPORTED_MODULE_24__.SimObject),
+/* harmony export */   Sprite: () => (/* reexport safe */ _core_graphics_sprite__WEBPACK_IMPORTED_MODULE_9__.Sprite),
+/* harmony export */   SpriteComponent: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_30__.SpriteComponent),
+/* harmony export */   SpriteComponentBuilder: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_30__.SpriteComponentBuilder),
+/* harmony export */   SpriteComponentData: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_30__.SpriteComponentData),
+/* harmony export */   Texture: () => (/* reexport safe */ _core_graphics_texture__WEBPACK_IMPORTED_MODULE_11__.Texture),
+/* harmony export */   TextureManager: () => (/* reexport safe */ _core_graphics_textureManager__WEBPACK_IMPORTED_MODULE_12__.TextureManager),
+/* harmony export */   UI: () => (/* reexport safe */ _core_ui_ui__WEBPACK_IMPORTED_MODULE_2__.UI),
+/* harmony export */   Vertex: () => (/* reexport safe */ _core_graphics_vertex__WEBPACK_IMPORTED_MODULE_8__.Vertex),
+/* harmony export */   Zone: () => (/* reexport safe */ _core_world_zone__WEBPACK_IMPORTED_MODULE_26__.Zone),
+/* harmony export */   ZoneManager: () => (/* reexport safe */ _core_world_zoneManager__WEBPACK_IMPORTED_MODULE_27__.ZoneManager),
+/* harmony export */   ZoneState: () => (/* reexport safe */ _core_world_zone__WEBPACK_IMPORTED_MODULE_26__.ZoneState),
+/* harmony export */   gl: () => (/* reexport safe */ _core_gl_gl__WEBPACK_IMPORTED_MODULE_3__.gl),
+/* harmony export */   glAttrInfo: () => (/* reexport safe */ _core_gl_glBuffer__WEBPACK_IMPORTED_MODULE_6__.glAttrInfo),
+/* harmony export */   glBuffer: () => (/* reexport safe */ _core_gl_glBuffer__WEBPACK_IMPORTED_MODULE_6__.glBuffer),
+/* harmony export */   m4x4: () => (/* reexport safe */ _core_utils_m4x4__WEBPACK_IMPORTED_MODULE_18__.m4x4),
+/* harmony export */   transform: () => (/* reexport safe */ _core_utils_transform__WEBPACK_IMPORTED_MODULE_19__.transform),
+/* harmony export */   vec2: () => (/* reexport safe */ _core_utils_vec2__WEBPACK_IMPORTED_MODULE_16__.vec2),
+/* harmony export */   vec3: () => (/* reexport safe */ _core_utils_vec3__WEBPACK_IMPORTED_MODULE_17__.vec3)
+/* harmony export */ });
+/* harmony import */ var _core_game__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./core/game */ "./BdvEngine/core/game.ts");
+/* harmony import */ var _core_engine__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./core/engine */ "./BdvEngine/core/engine.ts");
+/* harmony import */ var _core_ui_ui__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./core/ui/ui */ "./BdvEngine/core/ui/ui.ts");
+/* harmony import */ var _core_gl_gl__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./core/gl/gl */ "./BdvEngine/core/gl/gl.ts");
+/* harmony import */ var _core_gl_shader__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./core/gl/shader */ "./BdvEngine/core/gl/shader.ts");
+/* harmony import */ var _core_gl_shaders_defaultShader__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./core/gl/shaders/defaultShader */ "./BdvEngine/core/gl/shaders/defaultShader.ts");
+/* harmony import */ var _core_gl_glBuffer__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./core/gl/glBuffer */ "./BdvEngine/core/gl/glBuffer.ts");
+/* harmony import */ var _core_graphics_color__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ./core/graphics/color */ "./BdvEngine/core/graphics/color.ts");
+/* harmony import */ var _core_graphics_vertex__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(/*! ./core/graphics/vertex */ "./BdvEngine/core/graphics/vertex.ts");
+/* harmony import */ var _core_graphics_sprite__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(/*! ./core/graphics/sprite */ "./BdvEngine/core/graphics/sprite.ts");
+/* harmony import */ var _core_graphics_animatedSprite__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(/*! ./core/graphics/animatedSprite */ "./BdvEngine/core/graphics/animatedSprite.ts");
+/* harmony import */ var _core_graphics_texture__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(/*! ./core/graphics/texture */ "./BdvEngine/core/graphics/texture.ts");
+/* harmony import */ var _core_graphics_textureManager__WEBPACK_IMPORTED_MODULE_12__ = __webpack_require__(/*! ./core/graphics/textureManager */ "./BdvEngine/core/graphics/textureManager.ts");
+/* harmony import */ var _core_graphics_draw__WEBPACK_IMPORTED_MODULE_13__ = __webpack_require__(/*! ./core/graphics/draw */ "./BdvEngine/core/graphics/draw.ts");
+/* harmony import */ var _core_graphics_material__WEBPACK_IMPORTED_MODULE_14__ = __webpack_require__(/*! ./core/graphics/material */ "./BdvEngine/core/graphics/material.ts");
+/* harmony import */ var _core_graphics_materialManager__WEBPACK_IMPORTED_MODULE_15__ = __webpack_require__(/*! ./core/graphics/materialManager */ "./BdvEngine/core/graphics/materialManager.ts");
+/* harmony import */ var _core_utils_vec2__WEBPACK_IMPORTED_MODULE_16__ = __webpack_require__(/*! ./core/utils/vec2 */ "./BdvEngine/core/utils/vec2.ts");
+/* harmony import */ var _core_utils_vec3__WEBPACK_IMPORTED_MODULE_17__ = __webpack_require__(/*! ./core/utils/vec3 */ "./BdvEngine/core/utils/vec3.ts");
+/* harmony import */ var _core_utils_m4x4__WEBPACK_IMPORTED_MODULE_18__ = __webpack_require__(/*! ./core/utils/m4x4 */ "./BdvEngine/core/utils/m4x4.ts");
+/* harmony import */ var _core_utils_transform__WEBPACK_IMPORTED_MODULE_19__ = __webpack_require__(/*! ./core/utils/transform */ "./BdvEngine/core/utils/transform.ts");
+/* harmony import */ var _core_com_message__WEBPACK_IMPORTED_MODULE_20__ = __webpack_require__(/*! ./core/com/message */ "./BdvEngine/core/com/message.ts");
+/* harmony import */ var _core_com_messageBus__WEBPACK_IMPORTED_MODULE_21__ = __webpack_require__(/*! ./core/com/messageBus */ "./BdvEngine/core/com/messageBus.ts");
+/* harmony import */ var _core_input_inputManager__WEBPACK_IMPORTED_MODULE_22__ = __webpack_require__(/*! ./core/input/inputManager */ "./BdvEngine/core/input/inputManager.ts");
+/* harmony import */ var _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_23__ = __webpack_require__(/*! ./core/assets/assetManager */ "./BdvEngine/core/assets/assetManager.ts");
+/* harmony import */ var _core_world_simObject__WEBPACK_IMPORTED_MODULE_24__ = __webpack_require__(/*! ./core/world/simObject */ "./BdvEngine/core/world/simObject.ts");
+/* harmony import */ var _core_world_scene__WEBPACK_IMPORTED_MODULE_25__ = __webpack_require__(/*! ./core/world/scene */ "./BdvEngine/core/world/scene.ts");
+/* harmony import */ var _core_world_zone__WEBPACK_IMPORTED_MODULE_26__ = __webpack_require__(/*! ./core/world/zone */ "./BdvEngine/core/world/zone.ts");
+/* harmony import */ var _core_world_zoneManager__WEBPACK_IMPORTED_MODULE_27__ = __webpack_require__(/*! ./core/world/zoneManager */ "./BdvEngine/core/world/zoneManager.ts");
+/* harmony import */ var _core_components_baseComponent__WEBPACK_IMPORTED_MODULE_28__ = __webpack_require__(/*! ./core/components/baseComponent */ "./BdvEngine/core/components/baseComponent.ts");
+/* harmony import */ var _core_components_componentManager__WEBPACK_IMPORTED_MODULE_29__ = __webpack_require__(/*! ./core/components/componentManager */ "./BdvEngine/core/components/componentManager.ts");
+/* harmony import */ var _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_30__ = __webpack_require__(/*! ./core/components/spriteComponent */ "./BdvEngine/core/components/spriteComponent.ts");
+/* harmony import */ var _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_31__ = __webpack_require__(/*! ./core/components/animatedSpriteComponent */ "./BdvEngine/core/components/animatedSpriteComponent.ts");
+/* harmony import */ var _core_behaviors_baseBehavior__WEBPACK_IMPORTED_MODULE_32__ = __webpack_require__(/*! ./core/behaviors/baseBehavior */ "./BdvEngine/core/behaviors/baseBehavior.ts");
+/* harmony import */ var _core_behaviors_behaviorManager__WEBPACK_IMPORTED_MODULE_33__ = __webpack_require__(/*! ./core/behaviors/behaviorManager */ "./BdvEngine/core/behaviors/behaviorManager.ts");
+/* harmony import */ var _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_34__ = __webpack_require__(/*! ./core/behaviors/keyboardMovementBehavior */ "./BdvEngine/core/behaviors/keyboardMovementBehavior.ts");
+/* harmony import */ var _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_35__ = __webpack_require__(/*! ./core/behaviors/rotationBehavior */ "./BdvEngine/core/behaviors/rotationBehavior.ts");
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/***/ },
+
+/***/ "./example/myGame.ts"
+/*!***************************!*\
+  !*** ./example/myGame.ts ***!
+  \***************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   MyGame: () => (/* binding */ MyGame)
+/* harmony export */ });
+/* harmony import */ var _BdvEngine__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../BdvEngine */ "./BdvEngine/index.ts");
+
+class TintPulseShader extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Shader {
+    constructor() {
+        super("tint_pulse");
+        this.load(`
+      attribute vec3 a_pos;
+      attribute vec2 a_textCoord;
+
+      uniform mat4 u_proj;
+      uniform mat4 u_transf;
+
+      varying vec2 v_textCoord;
+
+      void main() {
+          gl_Position = u_proj * u_transf * vec4(a_pos, 1.0);
+          v_textCoord = a_textCoord;
+      }`, `
+      precision mediump float;
+
+      uniform sampler2D u_diffuse;
+      uniform vec4 u_color;
+      uniform float u_time;
+
+      varying vec2 v_textCoord;
+
+      void main() {
+          vec4 texColor = texture2D(u_diffuse, v_textCoord);
+          float pulse = (sin(u_time * 3.0) + 1.0) * 0.5;
+          vec3 tinted = mix(texColor.rgb, u_color.rgb, pulse * 0.6);
+          float dist = distance(v_textCoord, vec2(0.5, 0.5));
+          float vignette = smoothstep(0.7, 0.2, dist);
+          gl_FragColor = vec4(tinted * vignette, texColor.a * u_color.a);
+      }`);
+    }
+}
+class MyGame extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Game {
+    constructor() {
+        super(...arguments);
+        this.drawShapes = true;
+        this.elapsedTime = 0;
+    }
+    init() {
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.MaterialManager.register(new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Material("duck", "assets/textures/duck.png", _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white()));
+        this.crateMaterial = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Material("crate", "assets/textures/block.png", new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color(255, 100, 200, 255), new TintPulseShader());
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.MaterialManager.register(this.crateMaterial);
+        this.scene = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Scene();
+        let duck = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.SimObject(1, "duck");
+        duck.transform.position.vx = 100;
+        duck.transform.position.vy = 100;
+        duck.transform.scale.vx = 8;
+        duck.transform.scale.vy = 8;
+        let spriteData = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.AnimatedSpriteComponentData();
+        spriteData.name = "duckSprite";
+        spriteData.materialName = "duck";
+        spriteData.frameWidth = 17;
+        spriteData.frameHeight = 12;
+        spriteData.frameCount = 3;
+        spriteData.frameSequence = [0, 1, 2, 1];
+        duck.addComponent(new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.AnimatedSpriteComponent(spriteData));
+        let moveData = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.KeyboardMovementBehaviorData();
+        moveData.name = "mover";
+        moveData.speed = 2.5;
+        this.moveBehavior = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.KeyboardMovementBehavior(moveData);
+        duck.addBehavior(this.moveBehavior);
+        let crate = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.SimObject(2, "crate");
+        crate.transform.position.vx = 500;
+        crate.transform.position.vy = 80;
+        crate.transform.scale.vx = 8;
+        crate.transform.scale.vy = 8;
+        let crateData = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.AnimatedSpriteComponentData();
+        crateData.name = "crateSprite";
+        crateData.materialName = "crate";
+        crateData.frameWidth = 16;
+        crateData.frameHeight = 16;
+        crateData.frameCount = 1;
+        crateData.frameSequence = [0];
+        crate.addComponent(new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.AnimatedSpriteComponent(crateData));
+        this.scene.addObject(duck);
+        this.scene.addObject(crate);
+        this.scene.load();
+        let panel = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.panel(10, 40, {
+            width: "220px",
+            padding: "10px",
+            background: "rgba(0,0,0,0.7)",
+            borderRadius: "6px",
+        });
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.heading(panel, "BdvEngine", { color: "#4af" });
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.text(panel, "Arrow keys to move the duck");
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.spacer(panel);
+        let scoreText = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.text(panel, "Score: 0", { fontSize: "16px" });
+        let score = 0;
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.button(panel, "+10 Score", () => {
+            score += 10;
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.setText(scoreText, `Score: ${score}`);
+        });
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.spacer(panel);
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.slider(panel, "Speed", 1, 20, 3, (val) => {
+            this.moveBehavior.speed = val;
+        });
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.checkbox(panel, "Show shapes", true, (val) => {
+            this.drawShapes = val;
+        });
+    }
+    update(deltaTime) {
+        this.scene.update(deltaTime);
+        this.elapsedTime += deltaTime / 1000;
+        this.crateMaterial.setUniform("u_time", this.elapsedTime);
+    }
+    render(shader) {
+        this.scene.render(shader);
+        if (this.drawShapes) {
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rect(400, 300, 120, 80, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.red());
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rectOutline(400, 300, 120, 80, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white());
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.circle(700, 350, 50, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.green());
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.circleOutline(700, 350, 60, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white());
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.triangle(800, 250, 850, 350, 750, 350, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.blue());
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.line(50, 400, 300, 400, new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color(255, 255, 0, 255));
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.ray(50, 450, 1, 0.5, 200, new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color(0, 255, 255, 255));
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.point(600, 450, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white(), 6);
+        }
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.flush(shader);
+    }
+}
+
+
 /***/ }
 
 /******/ 	});
@@ -2530,18 +3356,23 @@ ZoneManager.registeredZones = {};
 var __webpack_exports__ = {};
 // This entry needs to be wrapped in an IIFE because it needs to be isolated against other modules in the chunk.
 (() => {
-/*!**************************!*\
-  !*** ./BdvEngine/app.ts ***!
-  \**************************/
+/*!************************!*\
+  !*** ./example/app.ts ***!
+  \************************/
 __webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _core_engine__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./core/engine */ "./BdvEngine/core/engine.ts");
+/* harmony import */ var _BdvEngine__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../BdvEngine */ "./BdvEngine/index.ts");
+/* harmony import */ var _myGame__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./myGame */ "./example/myGame.ts");
+
 
 let engine;
 window.onload = () => {
     const canvas = document.createElement("canvas");
     canvas.id = "mainFrame";
     document.body.appendChild(canvas);
-    engine = new _core_engine__WEBPACK_IMPORTED_MODULE_0__.Engine(canvas);
+    engine = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Engine(canvas, new _myGame__WEBPACK_IMPORTED_MODULE_1__.MyGame(), {
+        targetFps: 60,
+        showFps: true,
+    });
     engine.start();
 };
 window.onresize = () => {

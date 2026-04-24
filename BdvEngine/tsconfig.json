@@ -8,7 +8,11 @@
     "sourceMap": true,
     "target": "es6",
     "skipLibCheck": true,
-    "lib": ["es6", "dom"]
+    "lib": ["es6", "dom"],
+    "declaration": true,
+    "outDir": "../dist",
+    "declarationDir": "../dist",
+    "rootDir": "."
   },
   "include": ["**/*"],
   "exclude": ["node_modules", "**/*.spec.ts"]

@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "noImplicitAny": true,
+    "removeComments": true,
+    "preserveConstEnums": true,
+    "sourceMap": true,
+    "target": "es6",
+    "skipLibCheck": true,
+    "lib": ["es6", "dom"]
+  },
+  "include": ["BdvEngine/**/*", "example/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

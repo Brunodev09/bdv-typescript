@@ -3,24 +3,56 @@ import { gl } from './gl/gl';
 import { GLUTools } from './gl/gl';
 import { DefaultShader } from './gl/shaders/defaultShader';
 import { AssetManager } from './assets/assetManager';
-import { InputManager, MouseContext } from './input/inputManager';
+import { InputManager } from './input/inputManager';
 import { ZoneManager } from './world/zoneManager';
-import { Material } from './graphics/material';
-import { MaterialManager } from './graphics/materialManager';
-import { Color } from './graphics/color';
 import { m4x4 } from './utils/m4x4';
-import { Message } from './com/message';
-import { IMessageHandler } from './com/IMessageHandler';
 import { MessageBus } from './com/messageBus';
+import { Game } from './game';
+import { Draw } from './graphics/draw';
 
-export class Engine implements IMessageHandler {
+export interface EngineConfig {
+  /** Target FPS cap. 0 = uncapped (requestAnimationFrame only). Default: 60 */
+  targetFps?: number;
+  /** Show built-in FPS counter overlay. Default: false */
+  showFps?: boolean;
+}
+
+export class Engine {
   private canvas: HTMLCanvasElement;
   private defaultShader!: DefaultShader;
   private projectionMatrix!: m4x4;
   private previousTime: number = 0;
+  private game: Game;
 
-  public constructor(canvas: HTMLCanvasElement) {
+  // FPS limiting
+  private targetFps: number;
+  private frameInterval: number; // ms per frame
+  private accumulator: number = 0;
+
+  // FPS tracking
+  private showFps: boolean;
+  private frameCount: number = 0;
+  private fpsTimer: number = 0;
+  private currentFps: number = 0;
+  private fpsElement: HTMLDivElement | null = null;
+
+  public constructor(canvas: HTMLCanvasElement, game: Game, config?: EngineConfig) {
     this.canvas = canvas;
+    this.game = game;
+    this.targetFps = config?.targetFps ?? 60;
+    this.frameInterval = this.targetFps > 0 ? 1000 / this.targetFps : 0;
+    this.showFps = config?.showFps ?? false;
+  }
+
+  /** Current measured FPS. Read this from your game if needed. */
+  public get fps(): number {
+    return this.currentFps;
+  }
+
+  /** Change FPS cap at runtime. 0 = uncapped. */
+  public setTargetFps(fps: number): void {
+    this.targetFps = fps;
+    this.frameInterval = fps > 0 ? 1000 / fps : 0;
   }
 
   public start(): void {
@@ -30,29 +62,12 @@ export class Engine implements IMessageHandler {
     InputManager.initialize();
     ZoneManager.init();
 
-    //gl.clearColor(0, 0, 0, 1);
-    Message.subscribe("MOUSE_UP", this);
-
     gl.clearColor(0, 0, 0.3, 1);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
     this.defaultShader = new DefaultShader();
     this.defaultShader.use();
-
-    // MaterialManager.register(
-    //   new Material(
-    //     "block_mat",
-    //     "assets/textures/block.png",
-    //     new Color(0, 128, 255, 255),
-    //   ),
-    // );
-    MaterialManager.register(
-      new Material("block", "assets/textures/block.png", Color.white()),
-    );
-    MaterialManager.register(
-      new Material("duck", "assets/textures/duck.png", Color.white()),
-    );
 
     this.projectionMatrix = m4x4.ortho(
       0,
@@ -63,17 +78,19 @@ export class Engine implements IMessageHandler {
       100.0,
     );
 
-    ZoneManager.changeZone(0);
+    if (this.showFps) {
+      this.createFpsOverlay();
+    }
+
+    this.game.init();
 
     this.resize();
-    this.loop();
+    this.previousTime = performance.now();
+    requestAnimationFrame(this.tick.bind(this));
   }
 
-  public onMessage(message: Message): void {
-    if (message.code === "MOUSE_UP") {
-      let context = message.context as MouseContext;
-      document.title = `Pos: [${context.position.vx},${context.position.vy}]`;
-    }
+  public getShader(): DefaultShader {
+    return this.defaultShader;
   }
 
   public resize(): void {
@@ -91,25 +108,63 @@ export class Engine implements IMessageHandler {
     );
   }
 
-  private loop(): void {
-    this.update();
-    this.render();
+  private tick(): void {
+    let now = performance.now();
+    let elapsed = now - this.previousTime;
+
+    // FPS limiting: skip frame if we haven't waited long enough
+    if (this.frameInterval > 0) {
+      this.accumulator += elapsed;
+      this.previousTime = now;
+
+      if (this.accumulator < this.frameInterval) {
+        requestAnimationFrame(this.tick.bind(this));
+        return;
+      }
+
+      // consume one frame interval, carry remainder
+      let delta = this.frameInterval;
+      this.accumulator -= this.frameInterval;
+      // prevent spiral of death — clamp accumulated time
+      if (this.accumulator > this.frameInterval * 3) {
+        this.accumulator = 0;
+      }
+
+      this.updateFpsCounter(delta);
+      this.update(delta);
+      this.render();
+    } else {
+      // uncapped
+      this.previousTime = now;
+      this.updateFpsCounter(elapsed);
+      this.update(elapsed);
+      this.render();
+    }
+
+    requestAnimationFrame(this.tick.bind(this));
   }
 
-  private update(): void {
-    let delta = performance.now() - this.previousTime;
+  private updateFpsCounter(delta: number): void {
+    this.frameCount++;
+    this.fpsTimer += delta;
+    if (this.fpsTimer >= 1000) {
+      this.currentFps = this.frameCount;
+      this.frameCount = 0;
+      this.fpsTimer -= 1000;
+      if (this.fpsElement) {
+        this.fpsElement.textContent = `${this.currentFps} FPS`;
+      }
+    }
+  }
 
-    gl.clear(gl.COLOR_BUFFER_BIT);
+  private update(delta: number): void {
     MessageBus.update(delta);
+    this.game.update(delta);
     ZoneManager.update(delta);
-
-    this.previousTime = performance.now();
   }
 
   private render(): void {
     gl.clear(gl.COLOR_BUFFER_BIT);
-
-    ZoneManager.render(this.defaultShader);
 
     let projectionPosition = this.defaultShader.getUniformLocation("u_proj");
     gl.uniformMatrix4fv(
@@ -118,6 +173,18 @@ export class Engine implements IMessageHandler {
       new Float32Array(this.projectionMatrix.mData),
     );
 
-    requestAnimationFrame(this.loop.bind(this));
+    Draw.setProjection(this.projectionMatrix);
+
+    this.game.render(this.defaultShader);
+    ZoneManager.render(this.defaultShader);
+  }
+
+  private createFpsOverlay(): void {
+    this.fpsElement = document.createElement("div");
+    this.fpsElement.style.cssText =
+      "position:fixed;top:4px;left:4px;color:#0f0;font:bold 14px monospace;" +
+      "background:rgba(0,0,0,0.6);padding:2px 6px;pointer-events:none;z-index:9999;";
+    this.fpsElement.textContent = "0 FPS";
+    document.body.appendChild(this.fpsElement);
   }
 }
