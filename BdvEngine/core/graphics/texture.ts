@@ -73,7 +73,7 @@ namespace BdvEngine {
     }
 
     public unbind(): void {
-      gl.bindTexture(gl.TEXTURE_2D, undefined);
+      gl.bindTexture(gl.TEXTURE_2D, null);
     }
 
     public onMessage(message: Message): void {

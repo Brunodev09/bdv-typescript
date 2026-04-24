@@ -1,6 +1,6 @@
 namespace BdvEngine {
   export class RotationBehaviorData implements IBehaviorData {
-    public name: string;
+    public name!: string;
 
     public rotation: vec3 = vec3.zero;
 

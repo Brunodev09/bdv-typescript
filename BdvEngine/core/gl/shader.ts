@@ -1,7 +1,7 @@
 namespace BdvEngine {
   export abstract class Shader {
     private shaderName: string;
-    private program: WebGLProgram;
+    private program!: WebGLProgram;
     private attributes: { [name: string]: number } = {};
     private uniforms: { [name: string]: WebGLUniformLocation } = {};
 
@@ -43,7 +43,7 @@ namespace BdvEngine {
     }
 
     private loadShader(source: string, shaderType: number): WebGLShader {
-      let shader: WebGLShader = gl.createShader(shaderType);
+      let shader: WebGLShader = gl.createShader(shaderType)!;
 
       gl.shaderSource(shader, source);
       gl.compileShader(shader);
@@ -62,7 +62,7 @@ namespace BdvEngine {
       vertexShader: WebGLShader,
       fragmentShader: WebGLShader,
     ): void {
-      this.program = gl.createProgram();
+      this.program = gl.createProgram()!;
 
       gl.attachShader(this.program, vertexShader);
       gl.attachShader(this.program, fragmentShader);
@@ -82,7 +82,7 @@ namespace BdvEngine {
         gl.ACTIVE_ATTRIBUTES,
       );
       for (let i = 0; i < attrCount; i++) {
-        let attrInfo: WebGLActiveInfo = gl.getActiveAttrib(this.program, i);
+        let attrInfo: WebGLActiveInfo = gl.getActiveAttrib(this.program, i)!;
         if (!attrInfo) break;
         this.attributes[attrInfo.name] = gl.getAttribLocation(
           this.program,
@@ -97,12 +97,12 @@ namespace BdvEngine {
         gl.ACTIVE_UNIFORMS,
       );
       for (let i = 0; i < uniformCount; i++) {
-        let uniformInfo: WebGLActiveInfo = gl.getActiveUniform(this.program, i);
+        let uniformInfo: WebGLActiveInfo = gl.getActiveUniform(this.program, i)!;
         if (!uniformInfo) break;
         this.uniforms[uniformInfo.name] = gl.getUniformLocation(
           this.program,
           uniformInfo.name,
-        );
+        )!;
       }
     }
   }

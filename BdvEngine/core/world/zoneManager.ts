@@ -3,7 +3,7 @@ namespace BdvEngine {
     private static globalZoneId: number = -1;
     // private static zones: { [id: number]: Zone } = {};
     private static registeredZones: { [id: number]: string } = {};
-    private static currentZone: Zone;
+    private static currentZone: Zone | undefined;
 
     private static instance: ZoneManager;
 
@@ -78,7 +78,7 @@ namespace BdvEngine {
         zoneName = String(zoneData.name);
       }
 
-      let zoneDescription: string;
+      let zoneDescription: string = "";
       if (zoneData.description !== undefined) {
         zoneDescription = String(zoneData.description);
       }

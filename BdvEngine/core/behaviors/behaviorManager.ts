@@ -21,6 +21,8 @@ namespace BdvEngine {
           "BehaviorManager::Behavior manager error - type is missing or builder is not registered for this type.",
         );
       }
+
+      throw new Error("BehaviorManager::Behavior type is missing.");
     }
   }
 }

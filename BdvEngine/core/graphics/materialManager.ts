@@ -12,7 +12,7 @@ namespace BdvEngine {
     }
 
     public static get(materialName: string): Material {
-      if (!MaterialManager.materials[materialName]) return undefined;
+      if (!MaterialManager.materials[materialName]) return undefined as any;
       MaterialManager.materials[materialName].refCount++;
       return MaterialManager.materials[materialName].material;
     }
@@ -27,7 +27,7 @@ namespace BdvEngine {
       MaterialManager.materials[materialName].refCount--;
       if (MaterialManager.materials[materialName].refCount < 1) {
         MaterialManager.materials[materialName].material.destructor();
-        MaterialManager.materials[materialName].material = undefined;
+        MaterialManager.materials[materialName].material = undefined as any;
         delete MaterialManager.materials[materialName];
       }
     }

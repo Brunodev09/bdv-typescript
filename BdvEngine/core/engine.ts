@@ -1,8 +1,8 @@
 namespace BdvEngine {
   export class Engine implements IMessageHandler {
     private canvas: HTMLCanvasElement;
-    private defaultShader: DefaultShader;
-    private projectionMatrix: m4x4;
+    private defaultShader!: DefaultShader;
+    private projectionMatrix!: m4x4;
     private previousTime: number = 0;
 
     public constructor(canvas: HTMLCanvasElement) {

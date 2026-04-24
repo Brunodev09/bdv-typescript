@@ -23,7 +23,7 @@ namespace BdvEngine {
         TextureManager.textures[name].count--;
         if (TextureManager.textures[name].count < 1) {
           TextureManager.textures[name].texture.destructor();
-          TextureManager.textures[name] = undefined;
+          TextureManager.textures[name] = undefined as any;
           delete TextureManager.textures[name];
         }
       }

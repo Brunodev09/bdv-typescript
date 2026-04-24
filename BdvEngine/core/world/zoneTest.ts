@@ -1,10 +1,10 @@
 namespace BdvEngine {
   export class ZoneTest extends Zone {
-    private parentObject: SimObject;
-    private parentSprite: SpriteComponent;
+    private parentObject!: SimObject;
+    private parentSprite!: SpriteComponent;
 
-    private testObject: SimObject;
-    private testSprite: SpriteComponent;
+    private testObject!: SimObject;
+    private testSprite!: SpriteComponent;
 
     public load(): void {
       // this.parentObject = new SimObject(0, 'parentObject');

@@ -2,8 +2,8 @@ namespace BdvEngine {
   export class SimObject {
     private id: number;
     private children: SimObject[] = [];
-    private parent: SimObject;
-    private scene: Scene;
+    private parent: SimObject | undefined;
+    private scene: Scene | undefined;
     private isLoaded: boolean = false;
     private components: IComponent[] = [];
     private behaviors: IBehavior[] = [];
@@ -21,11 +21,11 @@ namespace BdvEngine {
       this.scene = scene;
     }
 
-    protected onAdded(scene: Scene): void {
+    protected onAdded(scene: Scene | undefined): void {
       this.scene = scene;
     }
 
-    private updateWorldMatrix(parentWorldMatrix: m4x4): void {
+    private updateWorldMatrix(parentWorldMatrix: m4x4 | undefined): void {
       if (parentWorldMatrix) {
         this.worldMatrix = m4x4.multiply(parentWorldMatrix, this.localMatrix);
       } else {
@@ -49,7 +49,7 @@ namespace BdvEngine {
       return this.worldMatrix;
     }
 
-    public get getParent(): SimObject {
+    public get getParent(): SimObject | undefined {
       return this.parent;
     }
 
@@ -67,11 +67,12 @@ namespace BdvEngine {
       let index = this.children.indexOf(child);
       if (index !== -1) {
         child.parent = undefined;
+
         this.children.splice(index, 1);
       }
     }
 
-    public getObjectByName(name: string): SimObject {
+    public getObjectByName(name: string): SimObject | undefined {
       if (this.name === name) {
         return this;
       }

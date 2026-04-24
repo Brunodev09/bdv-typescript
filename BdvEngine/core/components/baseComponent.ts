@@ -1,6 +1,6 @@
 namespace BdvEngine {
   export abstract class BaseComponent implements IComponent {
-    protected owner: SimObject;
+    protected owner!: SimObject;
     protected data: IComponentData;
     public name: string;
 

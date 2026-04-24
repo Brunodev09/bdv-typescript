@@ -48,7 +48,7 @@ namespace BdvEngine {
             let limit = Math.min(MessageBus.queueMessageTick, MessageBus.messageQueue.length);
 
             for (let i = 0; i < limit; i++) {
-                let node = MessageBus.messageQueue.shift();
+                let node = MessageBus.messageQueue.shift()!;
                 node.handler.onMessage(node.message);
             }
         }

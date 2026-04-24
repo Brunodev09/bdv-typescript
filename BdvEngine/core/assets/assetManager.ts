@@ -26,7 +26,7 @@ namespace BdvEngine {
     }
 
     public static loadAsset(assetName: string): void {
-      let ext = assetName.split(".").pop().toLowerCase();
+      let ext = assetName.split(".").pop()!.toLowerCase();
       for (let loader of AssetManager.loaders) {
         if (loader.supportedExtensions.indexOf(ext) !== -1) {
           loader.loadAsset(assetName);
@@ -47,7 +47,7 @@ namespace BdvEngine {
         return AssetManager.assetsPool[assetName];
       } else AssetManager.loadAsset(assetName);
 
-      return undefined;
+      return undefined as any;
     }
   }
 }

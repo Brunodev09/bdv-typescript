@@ -21,6 +21,8 @@ namespace BdvEngine {
           "Component manager error - type is missing or builder is not registered for this type.",
         );
       }
+
+      throw new Error("ComponentManager::Component type is missing.");
     }
   }
 }

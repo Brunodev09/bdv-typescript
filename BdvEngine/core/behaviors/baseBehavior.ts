@@ -3,7 +3,7 @@ namespace BdvEngine {
     public name: string;
 
     protected _data: IBehaviorData;
-    protected _owner: SimObject;
+    protected _owner!: SimObject;
 
     public constructor(data: IBehaviorData) {
       this._data = data;

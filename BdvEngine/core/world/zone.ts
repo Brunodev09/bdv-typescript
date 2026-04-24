@@ -33,7 +33,7 @@ namespace BdvEngine {
     }
 
     private loadSimObject(dataSection: any, parent: SimObject): void {
-      let name: string;
+      let name: string = "";
       if (dataSection.name !== undefined) {
         name = String(dataSection.name);
       }

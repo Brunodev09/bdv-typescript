@@ -7,7 +7,8 @@
         "outFile": "main.js",
         "sourceMap": true,
         "target": "es6",
-        "skipLibCheck": true
+        "skipLibCheck": true,
+        "ignoreDeprecations": "6.0"
     },
     "include": [
         "**/*"

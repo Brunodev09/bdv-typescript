@@ -1,3 +1,4 @@
+"use strict";
 let engine;
 window.onload = () => {
     const canvas = document.createElement("canvas");
@@ -199,6 +200,7 @@ var BdvEngine;
                 }
                 throw new Error("BehaviorManager::Behavior manager error - type is missing or builder is not registered for this type.");
             }
+            throw new Error("BehaviorManager::Behavior type is missing.");
         }
     }
     BehaviorManager.registeredBuilders = {};
@@ -423,6 +425,7 @@ var BdvEngine;
                 }
                 throw new Error("Component manager error - type is missing or builder is not registered for this type.");
             }
+            throw new Error("ComponentManager::Component type is missing.");
         }
     }
     ComponentManager.registeredBuilders = {};
@@ -760,7 +763,7 @@ var BdvEngine;
             for (let attr of this.attrInfo) {
                 BdvEngine.gl.disableVertexAttribArray(attr.location);
             }
-            BdvEngine.gl.bindBuffer(this.targetBufferType, undefined);
+            BdvEngine.gl.bindBuffer(this.targetBufferType, null);
         }
         addAttrLocation(info) {
             this.hasAttrLocation = true;
@@ -1143,7 +1146,7 @@ var BdvEngine;
             BdvEngine.gl.bindTexture(BdvEngine.gl.TEXTURE_2D, this.handle);
         }
         unbind() {
-            BdvEngine.gl.bindTexture(BdvEngine.gl.TEXTURE_2D, undefined);
+            BdvEngine.gl.bindTexture(BdvEngine.gl.TEXTURE_2D, null);
         }
         onMessage(message) {
             if (message.code === `${BdvEngine.MESSAGE_ASSET_LOADER_LOADED}::${this.name}`) {
@@ -1784,7 +1787,7 @@ var BdvEngine;
             }
         }
         loadSimObject(dataSection, parent) {
-            let name;
+            let name = "";
             if (dataSection.name !== undefined) {
                 name = String(dataSection.name);
             }
@@ -1916,7 +1919,7 @@ var BdvEngine;
             else {
                 zoneName = String(zoneData.name);
             }
-            let zoneDescription;
+            let zoneDescription = "";
             if (zoneData.description !== undefined) {
                 zoneDescription = String(zoneData.description);
             }

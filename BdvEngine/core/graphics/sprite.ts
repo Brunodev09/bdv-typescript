@@ -4,7 +4,7 @@ namespace BdvEngine {
     protected width: number;
     protected height: number;
 
-    protected buffer: glBuffer;
+    protected buffer!: glBuffer;
 
     protected materialName: string;
     protected material: Material;
@@ -26,8 +26,8 @@ namespace BdvEngine {
     public destructor(): void {
       this.buffer.destroy();
       MaterialManager.flush(this.materialName);
-      this.material = undefined;
-      this.materialName = undefined;
+      this.material = undefined as any;
+      this.materialName = undefined as any;
     }
 
     public get getName(): string {

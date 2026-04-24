@@ -1,14 +1,14 @@
 namespace BdvEngine {
   export class glAttrInfo {
-    public location: number;
-    public size: number;
+    public location!: number;
+    public size!: number;
     public offset: number = 0;
   }
 
   export class glBuffer {
     private hasAttrLocation: boolean = false;
     private elementSize: number;
-    private stride: number;
+    private stride!: number;
     private buffer: WebGLBuffer;
 
     private targetBufferType: number;
@@ -81,7 +81,7 @@ namespace BdvEngine {
       for (let attr of this.attrInfo) {
         gl.disableVertexAttribArray(attr.location);
       }
-      gl.bindBuffer(this.targetBufferType, undefined);
+      gl.bindBuffer(this.targetBufferType, null);
     }
 
     public addAttrLocation(info: glAttrInfo): void {

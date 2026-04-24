@@ -1,6 +1,6 @@
 namespace BdvEngine {
   export class KeyboardMovementBehaviorData implements IBehaviorData {
-    public name: string;
+    public name!: string;
     public speed: number = 0.1;
 
     public setFromJson(json: any): void {

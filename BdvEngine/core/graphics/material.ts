@@ -2,7 +2,7 @@ namespace BdvEngine {
   export class Material {
     private name: string;
     private diffuseTextureName: string;
-    private diffuseTexture: Texture;
+    private diffuseTexture!: Texture;
     private color: Color;
 
     public constructor(name: string, diffuseTextureName: string, color: Color) {
@@ -52,7 +52,7 @@ namespace BdvEngine {
 
     public destructor(): void {
       TextureManager.flushTexture(this.diffuseTextureName);
-      this.diffuseTexture = undefined;
+      this.diffuseTexture = undefined as any;
     }
   }
 }

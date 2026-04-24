@@ -22,7 +22,7 @@ namespace BdvEngine {
             this.root.removeChild(object);
         }
 
-        public getObjectByName(name: string): SimObject {
+        public getObjectByName(name: string): SimObject | undefined {
             return this.root.getObjectByName(name);
         }
 

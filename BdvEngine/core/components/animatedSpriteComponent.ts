@@ -8,9 +8,9 @@ namespace BdvEngine {
     extends SpriteComponentData
     implements IComponentData
   {
-    public frameWidth: number;
-    public frameHeight: number;
-    public frameCount: number;
+    public frameWidth!: number;
+    public frameHeight!: number;
+    public frameCount!: number;
     public frameSequence: number[] = [];
 
     public setFromJson(json: any): void {

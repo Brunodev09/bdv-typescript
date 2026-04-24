@@ -1,7 +1,7 @@
 namespace BdvEngine {
   export class SpriteComponentData implements IComponentData {
-    public name: string;
-    public materialName: string;
+    public name!: string;
+    public materialName!: string;
 
     public setFromJson(json: any): void {
       if (json.name !== undefined) {
