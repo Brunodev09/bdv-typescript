@@ -1,20 +1,15 @@
 {
-    "compilerOptions": {
-        "module": "amd",
-        "noImplicitAny": true,
-        "removeComments": true,
-        "preserveConstEnums": true,
-        "outFile": "main.js",
-        "sourceMap": true,
-        "target": "es6",
-        "skipLibCheck": true,
-        "ignoreDeprecations": "6.0"
-    },
-    "include": [
-        "**/*"
-    ],
-    "exclude": [
-        "node_modules",
-        "**/*.spec.ts"
-    ]
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "noImplicitAny": true,
+    "removeComments": true,
+    "preserveConstEnums": true,
+    "sourceMap": true,
+    "target": "es6",
+    "skipLibCheck": true,
+    "lib": ["es6", "dom"]
+  },
+  "include": ["**/*"],
+  "exclude": ["node_modules", "**/*.spec.ts"]
 }

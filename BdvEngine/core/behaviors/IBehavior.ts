@@ -1,11 +1,11 @@
-namespace BdvEngine {
-  export interface IBehavior {
-    name: string;
+import type { SimObject } from '../world/simObject';
 
-    setOwner(owner: SimObject): void;
+export interface IBehavior {
+  name: string;
 
-    update(time: number): void;
+  setOwner(owner: SimObject): void;
 
-    apply(userData: any): void;
-  }
+  update(time: number): void;
+
+  apply(userData: any): void;
 }

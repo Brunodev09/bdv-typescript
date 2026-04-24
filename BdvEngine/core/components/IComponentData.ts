@@ -1,7 +1,5 @@
-namespace BdvEngine {
-  export interface IComponentData {
-    name: string;
+export interface IComponentData {
+  name: string;
 
-    setFromJson(json: any): void;
-  }
+  setFromJson(json: any): void;
 }

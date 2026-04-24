@@ -1,34 +1,35 @@
-namespace BdvEngine {
-  export class Vertex {
-    public position: vec3 = vec3.zero;
-    public texCoords: vec2 = vec2.zero;
+import { vec3 } from '../utils/vec3';
+import { vec2 } from '../utils/vec2';
 
-    public constructor(
-      x: number = 0,
-      y: number = 0,
-      z: number = 0,
-      tu: number = 0,
-      tv: number = 0,
-    ) {
-      this.position.vx = x;
-      this.position.vy = y;
-      this.position.vz = z;
+export class Vertex {
+  public position: vec3 = vec3.zero;
+  public texCoords: vec2 = vec2.zero;
 
-      this.texCoords.vx = tu;
-      this.texCoords.vy = tv;
-    }
+  public constructor(
+    x: number = 0,
+    y: number = 0,
+    z: number = 0,
+    tu: number = 0,
+    tv: number = 0,
+  ) {
+    this.position.vx = x;
+    this.position.vy = y;
+    this.position.vz = z;
 
-    public toArray(): number[] {
-      let array: number[] = [];
+    this.texCoords.vx = tu;
+    this.texCoords.vy = tv;
+  }
 
-      array = array.concat(this.position.toArray());
-      array = array.concat(this.texCoords.toArray());
+  public toArray(): number[] {
+    let array: number[] = [];
 
-      return array;
-    }
+    array = array.concat(this.position.toArray());
+    array = array.concat(this.texCoords.toArray());
 
-    public toFloat32Array(): Float32Array {
-      return new Float32Array(this.toArray());
-    }
+    return array;
+  }
+
+  public toFloat32Array(): Float32Array {
+    return new Float32Array(this.toArray());
   }
 }

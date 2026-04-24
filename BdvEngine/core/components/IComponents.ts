@@ -1,14 +1,15 @@
-namespace BdvEngine {
-  export interface IComponent {
-    name: string;
+import type { SimObject } from '../world/simObject';
+import type { Shader } from '../gl/shader';
 
-    readonly getOwner: SimObject;
-    setOwner(owner: SimObject): void;
+export interface IComponent {
+  name: string;
 
-    load(): void;
+  readonly getOwner: SimObject;
+  setOwner(owner: SimObject): void;
 
-    update(time: number): void;
+  load(): void;
 
-    render(shader: Shader): void;
-  }
+  update(time: number): void;
+
+  render(shader: Shader): void;
 }

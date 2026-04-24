@@ -1,21 +1,23 @@
-namespace BdvEngine {
-  export abstract class BaseBehavior implements IBehavior {
-    public name: string;
+import { IBehavior } from './IBehavior';
+import { SimObject } from '../world/simObject';
+import { IBehaviorData } from './IBehaviorData';
 
-    protected _data: IBehaviorData;
-    protected _owner!: SimObject;
+export abstract class BaseBehavior implements IBehavior {
+  public name: string;
 
-    public constructor(data: IBehaviorData) {
-      this._data = data;
-      this.name = this._data.name;
-    }
+  protected _data: IBehaviorData;
+  protected _owner!: SimObject;
 
-    public setOwner(owner: SimObject): void {
-      this._owner = owner;
-    }
-
-    public update(time: number): void {}
-
-    public apply(userData: any): void {}
+  public constructor(data: IBehaviorData) {
+    this._data = data;
+    this.name = this._data.name;
   }
+
+  public setOwner(owner: SimObject): void {
+    this._owner = owner;
+  }
+
+  public update(time: number): void {}
+
+  public apply(userData: any): void {}
 }

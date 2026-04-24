@@ -1,53 +1,57 @@
-namespace BdvEngine {
-  export const MESSAGE_ASSET_LOADER_LOADED = "MESSAGE_ASSET_LOADER_LOADED";
+import { IAssetLoader } from './IAssetLoader';
+import { IAsset } from './IAsset';
+import { Message } from '../com/message';
+import { ImageAssetLoader } from './imageAssetLoader';
+import { JsonAssetLoader } from './jsonAssetLoader';
 
-  export class AssetManager {
-    private static loaders: IAssetLoader[] = [];
-    private static assetsPool: { [name: string]: IAsset } = {};
+export const MESSAGE_ASSET_LOADER_LOADED = "MESSAGE_ASSET_LOADER_LOADED";
 
-    private constructor() {}
+export class AssetManager {
+  private static loaders: IAssetLoader[] = [];
+  private static assetsPool: { [name: string]: IAsset } = {};
 
-    public static init(): void {
-      AssetManager.loaders.push(new ImageAssetLoader());
-      AssetManager.loaders.push(new JsonAssetLoader());
-    }
+  private constructor() {}
 
-    public static register(loader: IAssetLoader): void {
-      AssetManager.loaders.push(loader);
-    }
+  public static init(): void {
+    AssetManager.loaders.push(new ImageAssetLoader());
+    AssetManager.loaders.push(new JsonAssetLoader());
+  }
 
-    public static onLoaded(asset: IAsset): void {
-      AssetManager.assetsPool[asset.name] = asset;
-      Message.send(
-        `${MESSAGE_ASSET_LOADER_LOADED}::${asset.name}`,
-        this,
-        asset,
-      );
-    }
+  public static register(loader: IAssetLoader): void {
+    AssetManager.loaders.push(loader);
+  }
 
-    public static loadAsset(assetName: string): void {
-      let ext = assetName.split(".").pop()!.toLowerCase();
-      for (let loader of AssetManager.loaders) {
-        if (loader.supportedExtensions.indexOf(ext) !== -1) {
-          loader.loadAsset(assetName);
-          return;
-        }
+  public static onLoaded(asset: IAsset): void {
+    AssetManager.assetsPool[asset.name] = asset;
+    Message.send(
+      `${MESSAGE_ASSET_LOADER_LOADED}::${asset.name}`,
+      this,
+      asset,
+    );
+  }
+
+  public static loadAsset(assetName: string): void {
+    let ext = assetName.split(".").pop()!.toLowerCase();
+    for (let loader of AssetManager.loaders) {
+      if (loader.supportedExtensions.indexOf(ext) !== -1) {
+        loader.loadAsset(assetName);
+        return;
       }
-      console.log(
-        `AssetManager::Unable to load asset with the defined extension ${ext}.`,
-      );
     }
+    console.log(
+      `AssetManager::Unable to load asset with the defined extension ${ext}.`,
+    );
+  }
 
-    public static isLoaded(assetName: string): boolean {
-      return !!AssetManager.assetsPool[assetName];
-    }
+  public static isLoaded(assetName: string): boolean {
+    return !!AssetManager.assetsPool[assetName];
+  }
 
-    public static get(assetName: string): IAsset {
-      if (AssetManager.assetsPool[assetName] !== undefined) {
-        return AssetManager.assetsPool[assetName];
-      } else AssetManager.loadAsset(assetName);
+  public static get(assetName: string): IAsset {
+    if (AssetManager.assetsPool[assetName] !== undefined) {
+      return AssetManager.assetsPool[assetName];
+    } else AssetManager.loadAsset(assetName);
 
-      return undefined as any;
-    }
+    return undefined as any;
   }
 }

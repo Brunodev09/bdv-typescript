@@ -1,7 +1,7 @@
-namespace BdvEngine {
-  export interface IComponentBuilder {
-    readonly type: string;
+import { IComponent } from './IComponents';
 
-    buildFromJson(json: any): IComponent;
-  }
+export interface IComponentBuilder {
+  readonly type: string;
+
+  buildFromJson(json: any): IComponent;
 }

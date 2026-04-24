@@ -1,41 +1,42 @@
-namespace BdvEngine {
-    export class Scene {
-        private root: SimObject;
+import { SimObject } from './simObject';
+import { Shader } from '../gl/shader';
 
-        public constructor() {
-            this.root = new SimObject(0, '__root__', this);
-        }
+export class Scene {
+    private root: SimObject;
 
-        public get getRoot(): SimObject {
-            return this.root;
-        }
+    public constructor() {
+        this.root = new SimObject(0, '__root__', this);
+    }
 
-        public get isLoaded(): boolean {
-            return this.root.getIsLoaded;
-        }
+    public get getRoot(): SimObject {
+        return this.root;
+    }
 
-        public addObject(object: SimObject): void {
-            this.root.addChild(object);
-        }
+    public get isLoaded(): boolean {
+        return this.root.getIsLoaded;
+    }
 
-        public removeObject(object: SimObject): void {
-            this.root.removeChild(object);
-        }
+    public addObject(object: SimObject): void {
+        this.root.addChild(object);
+    }
 
-        public getObjectByName(name: string): SimObject | undefined {
-            return this.root.getObjectByName(name);
-        }
+    public removeObject(object: SimObject): void {
+        this.root.removeChild(object);
+    }
 
-        public load(): void {
-            this.root.load();
-        }
+    public getObjectByName(name: string): SimObject | undefined {
+        return this.root.getObjectByName(name);
+    }
 
-        public update(deltaTime: number): void {
-            this.root.update(deltaTime);
-        }
+    public load(): void {
+        this.root.load();
+    }
 
-        public render(shader: Shader): void {
-            this.root.render(shader);
-        }
+    public update(deltaTime: number): void {
+        this.root.update(deltaTime);
+    }
+
+    public render(shader: Shader): void {
+        this.root.render(shader);
     }
 }

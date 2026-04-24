@@ -1,28 +1,29 @@
-namespace BdvEngine {
-  export class ComponentManager {
-    private static registeredBuilders: { [type: string]: IComponentBuilder } =
-      {};
+import { IComponentBuilder } from './IComponentBuilder';
+import { IComponent } from './IComponents';
 
-    public static registerBuilder(builder: IComponentBuilder): void {
-      ComponentManager.registeredBuilders[builder.type] = builder;
-    }
+export class ComponentManager {
+  private static registeredBuilders: { [type: string]: IComponentBuilder } =
+    {};
 
-    public static extractComponent(json: any): IComponent {
-      if (json.type !== undefined) {
-        if (
-          ComponentManager.registeredBuilders[String(json.type)] !== undefined
-        ) {
-          return ComponentManager.registeredBuilders[
-            String(json.type)
-          ].buildFromJson(json);
-        }
+  public static registerBuilder(builder: IComponentBuilder): void {
+    ComponentManager.registeredBuilders[builder.type] = builder;
+  }
 
-        throw new Error(
-          "Component manager error - type is missing or builder is not registered for this type.",
-        );
+  public static extractComponent(json: any): IComponent {
+    if (json.type !== undefined) {
+      if (
+        ComponentManager.registeredBuilders[String(json.type)] !== undefined
+      ) {
+        return ComponentManager.registeredBuilders[
+          String(json.type)
+        ].buildFromJson(json);
       }
 
-      throw new Error("ComponentManager::Component type is missing.");
+      throw new Error(
+        "Component manager error - type is missing or builder is not registered for this type.",
+      );
     }
+
+    throw new Error("ComponentManager::Component type is missing.");
   }
 }

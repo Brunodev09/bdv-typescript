@@ -1,7 +1,5 @@
-namespace BdvEngine {
-  export interface IBehaviorData {
-    name: string;
+export interface IBehaviorData {
+  name: string;
 
-    setFromJson(json: any): void;
-  }
+  setFromJson(json: any): void;
 }

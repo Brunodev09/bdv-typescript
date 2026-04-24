@@ -1,5 +1,5 @@
-namespace BdvEngine {
-    export interface IMessageHandler {
-        onMessage(message: Message): void;
-    }
+import type { Message } from './message';
+
+export interface IMessageHandler {
+    onMessage(message: Message): void;
 }
