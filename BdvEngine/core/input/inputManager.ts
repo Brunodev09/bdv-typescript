@@ -6,6 +6,25 @@ export enum Keys {
   UP = 38,
   RIGHT = 39,
   DOWN = 40,
+
+  W = 87,
+  A = 65,
+  S = 83,
+  D = 68,
+
+  SPACE = 32,
+  SHIFT = 16,
+  ENTER = 13,
+  ESCAPE = 27,
+
+  Q = 81,
+  E = 69,
+  R = 82,
+  F = 70,
+  Z = 90,
+  X = 88,
+  C = 67,
+  V = 86,
 }
 
 export class MouseContext {
@@ -29,6 +48,7 @@ export class InputManager {
   private static _mouseY: number;
   private static _leftDown: boolean = false;
   private static _rightDown: boolean = false;
+  private static _wheelDelta: number = 0;
 
   public static initialize(): void {
     for (let i = 0; i < 255; ++i) {
@@ -40,10 +60,18 @@ export class InputManager {
     window.addEventListener("mousemove", InputManager.onMouseMove);
     window.addEventListener("mousedown", InputManager.onMouseDown);
     window.addEventListener("mouseup", InputManager.onMouseUp);
+    window.addEventListener("wheel", InputManager.onWheel, { passive: false });
   }
 
   public static isKeyDown(key: Keys): boolean {
     return InputManager._keys[key];
+  }
+
+  /** Returns accumulated wheel delta since last call, then resets it. */
+  public static consumeWheelDelta(): number {
+    let d = InputManager._wheelDelta;
+    InputManager._wheelDelta = 0;
+    return d;
   }
 
   public static getMousePosition(): vec2 {
@@ -105,5 +133,10 @@ export class InputManager {
         InputManager.getMousePosition(),
       ),
     );
+  }
+
+  private static onWheel(event: WheelEvent): void {
+    event.preventDefault();
+    InputManager._wheelDelta += event.deltaY;
   }
 }

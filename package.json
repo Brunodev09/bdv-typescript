@@ -11,6 +11,7 @@
     "build": "tsc -p BdvEngine/tsconfig.json",
     "compile": "webpack",
     "compile:3d": "ENTRY=3d webpack",
+    "compile:terrain": "ENTRY=terrain webpack",
     "start": "nodemon --inspect ./server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

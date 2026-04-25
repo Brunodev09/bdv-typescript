@@ -2814,6 +2814,222 @@ class TextureNode {
 
 /***/ },
 
+/***/ "./BdvEngine/core/graphics/tileMap.ts"
+/*!********************************************!*\
+  !*** ./BdvEngine/core/graphics/tileMap.ts ***!
+  \********************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   TileMap: () => (/* binding */ TileMap),
+/* harmony export */   TileSet: () => (/* binding */ TileSet)
+/* harmony export */ });
+/* harmony import */ var _gl_gl__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../gl/gl */ "./BdvEngine/core/gl/gl.ts");
+/* harmony import */ var _color__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./color */ "./BdvEngine/core/graphics/color.ts");
+/* harmony import */ var _spriteBatcher__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./spriteBatcher */ "./BdvEngine/core/graphics/spriteBatcher.ts");
+/* harmony import */ var _material__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./material */ "./BdvEngine/core/graphics/material.ts");
+/* harmony import */ var _materialManager__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./materialManager */ "./BdvEngine/core/graphics/materialManager.ts");
+
+
+
+
+
+class TileSet {
+    constructor(config) {
+        this.uvs = [];
+        this.cols = 0;
+        this.rows = 0;
+        this.ready = false;
+        this.filtering = 'nearest';
+        this.tileWidth = config.tileWidth;
+        this.tileHeight = config.tileHeight;
+        this.material = new _material__WEBPACK_IMPORTED_MODULE_3__.Material(config.materialName, config.imagePath, _color__WEBPACK_IMPORTED_MODULE_1__.Color.white());
+        _materialManager__WEBPACK_IMPORTED_MODULE_4__.MaterialManager.register(this.material);
+    }
+    computeUVs() {
+        if (this.ready)
+            return true;
+        let tex = this.material.diffTexture;
+        if (!tex || !tex.textureIsLoaded)
+            return false;
+        if (this.filtering === 'linear') {
+            tex.bind();
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.texParameteri(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TEXTURE_2D, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TEXTURE_MIN_FILTER, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.LINEAR);
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.texParameteri(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TEXTURE_2D, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TEXTURE_MAG_FILTER, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.LINEAR);
+        }
+        let texW = tex.textureWidth;
+        let texH = tex.textureHeight;
+        this.cols = Math.floor(texW / this.tileWidth);
+        this.rows = Math.floor(texH / this.tileHeight);
+        this.uvs = [];
+        for (let r = 0; r < this.rows; r++) {
+            for (let c = 0; c < this.cols; c++) {
+                let u0 = (c * this.tileWidth) / texW;
+                let v0 = (r * this.tileHeight) / texH;
+                let u1 = ((c + 1) * this.tileWidth) / texW;
+                let v1 = ((r + 1) * this.tileHeight) / texH;
+                this.uvs.push({ u0, v0, u1, v1 });
+            }
+        }
+        this.ready = true;
+        return true;
+    }
+    get tileCount() { return this.uvs.length; }
+    get isReady() { return this.ready; }
+    getUV(tileIndex) {
+        if (tileIndex < 0 || tileIndex >= this.uvs.length)
+            return null;
+        return this.uvs[tileIndex];
+    }
+}
+class TileMap {
+    constructor(tileSet, mapWidth, mapHeight, renderTileSize = 16) {
+        this.heightScale = 6;
+        this.shadowStrength = 0.45;
+        this.lodTileSet = null;
+        this.lodThreshold = 6;
+        this.importantTiles = new Set();
+        this.tileSet = tileSet;
+        this.mapWidth = mapWidth;
+        this.mapHeight = mapHeight;
+        this.renderTileSize = renderTileSize;
+        this.tiles = new Int16Array(mapWidth * mapHeight);
+        this.tiles.fill(-1);
+        this.heights = new Float32Array(mapWidth * mapHeight);
+    }
+    setTile(x, y, tileIndex) {
+        if (x < 0 || x >= this.mapWidth || y < 0 || y >= this.mapHeight)
+            return;
+        this.tiles[y * this.mapWidth + x] = tileIndex;
+    }
+    getTile(x, y) {
+        if (x < 0 || x >= this.mapWidth || y < 0 || y >= this.mapHeight)
+            return -1;
+        return this.tiles[y * this.mapWidth + x];
+    }
+    setHeight(x, y, height) {
+        if (x < 0 || x >= this.mapWidth || y < 0 || y >= this.mapHeight)
+            return;
+        this.heights[y * this.mapWidth + x] = height;
+    }
+    getHeight(x, y) {
+        if (x < 0 || x >= this.mapWidth || y < 0 || y >= this.mapHeight)
+            return 0;
+        return this.heights[y * this.mapWidth + x];
+    }
+    fill(tileIndex) { this.tiles.fill(tileIndex); }
+    get width() { return this.mapWidth; }
+    get height() { return this.mapHeight; }
+    get tileSize() { return this.renderTileSize; }
+    render(camX, camY, zoom, screenW, screenH) {
+        if (!this.tileSet.computeUVs())
+            return;
+        let ts = this.renderTileSize * zoom;
+        let useLod = this.lodTileSet && ts < this.lodThreshold;
+        let activeTileSet = useLod ? this.lodTileSet : this.tileSet;
+        if (useLod && !activeTileSet.computeUVs()) {
+            activeTileSet = this.tileSet;
+        }
+        let hs = this.heightScale * zoom;
+        let step = 1;
+        if (ts < 4)
+            step = 8;
+        else if (ts < 6)
+            step = 4;
+        else if (ts < 10)
+            step = 2;
+        let effectiveTs = ts * step;
+        let halfW = screenW / 2 / effectiveTs;
+        let halfH = screenH / 2 / effectiveTs;
+        let camTX = camX / (this.renderTileSize * step);
+        let camTY = camY / (this.renderTileSize * step);
+        let margin = (hs > 0) ? Math.ceil(hs * 1.5 / effectiveTs) + 2 : 2;
+        let startX = Math.max(0, Math.floor((camTX - halfW) - 1) * step);
+        let startY = Math.max(0, Math.floor((camTY - halfH) - margin) * step);
+        let endX = Math.min(this.mapWidth, Math.ceil((camTX + halfW) + 1) * step);
+        let endY = Math.min(this.mapHeight, Math.ceil((camTY + halfH) + 2) * step);
+        let offsetX = screenW / 2 - camX * zoom;
+        let offsetY = screenH / 2 - camY * zoom;
+        let mat = activeTileSet.material;
+        let baseR = mat.diffColor.rFloat;
+        let baseG = mat.diffColor.gFloat;
+        let baseB = mat.diffColor.bFloat;
+        let baseA = mat.diffColor.aFloat;
+        let texture = mat.diffTexture;
+        if (!texture)
+            return;
+        let key = "__default_batch__:" + mat.diffTextureName;
+        let batch = _spriteBatcher__WEBPACK_IMPORTED_MODULE_2__.SpriteBatcher.batches;
+        if (!batch) {
+            _spriteBatcher__WEBPACK_IMPORTED_MODULE_2__.SpriteBatcher.ensureInit();
+            batch = _spriteBatcher__WEBPACK_IMPORTED_MODULE_2__.SpriteBatcher.batches;
+        }
+        let batchEntry = batch.get(key);
+        if (!batchEntry) {
+            batchEntry = { verts: [], texture: texture, material: null };
+            batch.set(key, batchEntry);
+        }
+        let buf = batchEntry.verts;
+        let enable3d = ts >= 3;
+        let hasImportant = this.importantTiles.size > 0 && step > 1;
+        let showImportant = hasImportant && step <= 4;
+        let iterStep = showImportant ? 1 : step;
+        for (let y = startY; y < endY; y += iterStep) {
+            for (let x = startX; x < endX; x += iterStep) {
+                let tileIdx = this.tiles[y * this.mapWidth + x];
+                if (tileIdx < 0)
+                    continue;
+                let onGrid = (x % step === 0) && (y % step === 0);
+                if (!onGrid && !(showImportant && this.importantTiles.has(tileIdx)))
+                    continue;
+                let uv = activeTileSet.getUV(tileIdx);
+                if (!uv)
+                    continue;
+                let h = this.heights[y * this.mapWidth + x];
+                let yOffset = enable3d ? -h * hs : 0;
+                let hSouth = (y + 1 < this.mapHeight) ? this.heights[(y + 1) * this.mapWidth + x] : h;
+                let hNorth = (y - 1 >= 0) ? this.heights[(y - 1) * this.mapWidth + x] : h;
+                let hEast = (x + 1 < this.mapWidth) ? this.heights[y * this.mapWidth + x + 1] : h;
+                let hWest = (x - 1 >= 0) ? this.heights[y * this.mapWidth + x - 1] : h;
+                let avgNeighbor = (hSouth + hNorth + hEast + hWest) / 4;
+                let ao = Math.max(0, (avgNeighbor - h) * this.shadowStrength * 0.5);
+                let slopeS = Math.max(0, h - hSouth);
+                let slopeE = Math.max(0, h - hEast);
+                let light = 1.0 - Math.min(0.3, (slopeS + slopeE) * 0.1) - ao;
+                let slopeN = Math.max(0, h - hNorth);
+                light += slopeN * 0.08;
+                light = Math.max(0.5, Math.min(1.15, light));
+                let r = baseR * light;
+                let g = baseG * light;
+                let b = baseB * light;
+                let tileStep = onGrid ? step : 1;
+                let sx = Math.round(x * ts + offsetX);
+                let sy = Math.round(y * ts + offsetY + yOffset);
+                let sx2 = Math.round((x + tileStep) * ts + offsetX);
+                let sy2 = Math.round((y + tileStep) * ts + offsetY + yOffset);
+                buf.push(sx, sy, 0, uv.u0, uv.v0, r, g, b, baseA, sx, sy2, 0, uv.u0, uv.v1, r, g, b, baseA, sx2, sy2, 0, uv.u1, uv.v1, r, g, b, baseA, sx2, sy2, 0, uv.u1, uv.v1, r, g, b, baseA, sx2, sy, 0, uv.u1, uv.v0, r, g, b, baseA, sx, sy, 0, uv.u0, uv.v0, r, g, b, baseA);
+                if (!enable3d)
+                    continue;
+                let dropS = (h - hSouth) * hs;
+                if (dropS > 2) {
+                    let cliffBottom = sy2 + Math.round(dropS);
+                    let cr = r * 0.6;
+                    let cg = g * 0.6;
+                    let cb = b * 0.6;
+                    let crBot = r * 0.4;
+                    let cgBot = g * 0.4;
+                    let cbBot = b * 0.4;
+                    buf.push(sx, sy2, 0, uv.u0, uv.v1, cr, cg, cb, baseA, sx, cliffBottom, 0, uv.u0, uv.v1, crBot, cgBot, cbBot, baseA, sx2, cliffBottom, 0, uv.u1, uv.v1, crBot, cgBot, cbBot, baseA, sx2, cliffBottom, 0, uv.u1, uv.v1, crBot, cgBot, cbBot, baseA, sx2, sy2, 0, uv.u1, uv.v1, cr, cg, cb, baseA, sx, sy2, 0, uv.u0, uv.v1, cr, cg, cb, baseA);
+                }
+            }
+        }
+    }
+}
+
+
+/***/ },
+
 /***/ "./BdvEngine/core/graphics/vertex.ts"
 /*!*******************************************!*\
   !*** ./BdvEngine/core/graphics/vertex.ts ***!
@@ -2874,6 +3090,22 @@ var Keys;
     Keys[Keys["UP"] = 38] = "UP";
     Keys[Keys["RIGHT"] = 39] = "RIGHT";
     Keys[Keys["DOWN"] = 40] = "DOWN";
+    Keys[Keys["W"] = 87] = "W";
+    Keys[Keys["A"] = 65] = "A";
+    Keys[Keys["S"] = 83] = "S";
+    Keys[Keys["D"] = 68] = "D";
+    Keys[Keys["SPACE"] = 32] = "SPACE";
+    Keys[Keys["SHIFT"] = 16] = "SHIFT";
+    Keys[Keys["ENTER"] = 13] = "ENTER";
+    Keys[Keys["ESCAPE"] = 27] = "ESCAPE";
+    Keys[Keys["Q"] = 81] = "Q";
+    Keys[Keys["E"] = 69] = "E";
+    Keys[Keys["R"] = 82] = "R";
+    Keys[Keys["F"] = 70] = "F";
+    Keys[Keys["Z"] = 90] = "Z";
+    Keys[Keys["X"] = 88] = "X";
+    Keys[Keys["C"] = 67] = "C";
+    Keys[Keys["V"] = 86] = "V";
 })(Keys || (Keys = {}));
 class MouseContext {
     constructor(leftDown, rightDown, position) {
@@ -2892,9 +3124,15 @@ class InputManager {
         window.addEventListener("mousemove", InputManager.onMouseMove);
         window.addEventListener("mousedown", InputManager.onMouseDown);
         window.addEventListener("mouseup", InputManager.onMouseUp);
+        window.addEventListener("wheel", InputManager.onWheel, { passive: false });
     }
     static isKeyDown(key) {
         return InputManager._keys[key];
+    }
+    static consumeWheelDelta() {
+        let d = InputManager._wheelDelta;
+        InputManager._wheelDelta = 0;
+        return d;
     }
     static getMousePosition() {
         return new _utils_vec2__WEBPACK_IMPORTED_MODULE_0__.vec2(this._mouseX, this._mouseY);
@@ -2935,10 +3173,15 @@ class InputManager {
         }
         _com_message__WEBPACK_IMPORTED_MODULE_1__.Message.send("MOUSE_UP", InputManager, new MouseContext(InputManager._leftDown, InputManager._rightDown, InputManager.getMousePosition()));
     }
+    static onWheel(event) {
+        event.preventDefault();
+        InputManager._wheelDelta += event.deltaY;
+    }
 }
 InputManager._keys = [];
 InputManager._leftDown = false;
 InputManager._rightDown = false;
+InputManager._wheelDelta = 0;
 
 
 /***/ },
@@ -3963,65 +4206,67 @@ ZoneManager.registeredZones = {};
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   AnimatedSprite: () => (/* reexport safe */ _core_graphics_animatedSprite__WEBPACK_IMPORTED_MODULE_16__.AnimatedSprite),
-/* harmony export */   AnimatedSpriteComponent: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_39__.AnimatedSpriteComponent),
-/* harmony export */   AnimatedSpriteComponentBuilder: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_39__.AnimatedSpriteComponentBuilder),
-/* harmony export */   AnimatedSpriteComponentData: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_39__.AnimatedSpriteComponentData),
-/* harmony export */   AssetManager: () => (/* reexport safe */ _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_31__.AssetManager),
-/* harmony export */   BaseBehavior: () => (/* reexport safe */ _core_behaviors_baseBehavior__WEBPACK_IMPORTED_MODULE_40__.BaseBehavior),
-/* harmony export */   BaseComponent: () => (/* reexport safe */ _core_components_baseComponent__WEBPACK_IMPORTED_MODULE_36__.BaseComponent),
-/* harmony export */   BehaviorManager: () => (/* reexport safe */ _core_behaviors_behaviorManager__WEBPACK_IMPORTED_MODULE_41__.BehaviorManager),
+/* harmony export */   AnimatedSpriteComponent: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_40__.AnimatedSpriteComponent),
+/* harmony export */   AnimatedSpriteComponentBuilder: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_40__.AnimatedSpriteComponentBuilder),
+/* harmony export */   AnimatedSpriteComponentData: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_40__.AnimatedSpriteComponentData),
+/* harmony export */   AssetManager: () => (/* reexport safe */ _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_32__.AssetManager),
+/* harmony export */   BaseBehavior: () => (/* reexport safe */ _core_behaviors_baseBehavior__WEBPACK_IMPORTED_MODULE_41__.BaseBehavior),
+/* harmony export */   BaseComponent: () => (/* reexport safe */ _core_components_baseComponent__WEBPACK_IMPORTED_MODULE_37__.BaseComponent),
+/* harmony export */   BehaviorManager: () => (/* reexport safe */ _core_behaviors_behaviorManager__WEBPACK_IMPORTED_MODULE_42__.BehaviorManager),
 /* harmony export */   Camera: () => (/* reexport safe */ _core_3d_camera__WEBPACK_IMPORTED_MODULE_4__.Camera),
 /* harmony export */   Color: () => (/* reexport safe */ _core_graphics_color__WEBPACK_IMPORTED_MODULE_13__.Color),
-/* harmony export */   ComponentManager: () => (/* reexport safe */ _core_components_componentManager__WEBPACK_IMPORTED_MODULE_37__.ComponentManager),
+/* harmony export */   ComponentManager: () => (/* reexport safe */ _core_components_componentManager__WEBPACK_IMPORTED_MODULE_38__.ComponentManager),
 /* harmony export */   DefaultShader: () => (/* reexport safe */ _core_gl_shaders_defaultShader__WEBPACK_IMPORTED_MODULE_11__.DefaultShader),
 /* harmony export */   Draw: () => (/* reexport safe */ _core_graphics_draw__WEBPACK_IMPORTED_MODULE_19__.Draw),
 /* harmony export */   Engine: () => (/* reexport safe */ _core_engine__WEBPACK_IMPORTED_MODULE_1__.Engine),
 /* harmony export */   Engine3D: () => (/* reexport safe */ _core_engine3d__WEBPACK_IMPORTED_MODULE_2__.Engine3D),
 /* harmony export */   GLUTools: () => (/* reexport safe */ _core_gl_gl__WEBPACK_IMPORTED_MODULE_9__.GLUTools),
 /* harmony export */   Game: () => (/* reexport safe */ _core_game__WEBPACK_IMPORTED_MODULE_0__.Game),
-/* harmony export */   InputManager: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_30__.InputManager),
-/* harmony export */   KeyboardMovementBehavior: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_42__.KeyboardMovementBehavior),
-/* harmony export */   KeyboardMovementBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_42__.KeyboardMovementBehaviorBuilder),
-/* harmony export */   KeyboardMovementBehaviorData: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_42__.KeyboardMovementBehaviorData),
-/* harmony export */   Keys: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_30__.Keys),
+/* harmony export */   InputManager: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_31__.InputManager),
+/* harmony export */   KeyboardMovementBehavior: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_43__.KeyboardMovementBehavior),
+/* harmony export */   KeyboardMovementBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_43__.KeyboardMovementBehaviorBuilder),
+/* harmony export */   KeyboardMovementBehaviorData: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_43__.KeyboardMovementBehaviorData),
+/* harmony export */   Keys: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_31__.Keys),
 /* harmony export */   LitShader: () => (/* reexport safe */ _core_3d_litShader__WEBPACK_IMPORTED_MODULE_7__.LitShader),
-/* harmony export */   MESSAGE_ASSET_LOADER_LOADED: () => (/* reexport safe */ _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_31__.MESSAGE_ASSET_LOADER_LOADED),
+/* harmony export */   MESSAGE_ASSET_LOADER_LOADED: () => (/* reexport safe */ _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_32__.MESSAGE_ASSET_LOADER_LOADED),
 /* harmony export */   Material: () => (/* reexport safe */ _core_graphics_material__WEBPACK_IMPORTED_MODULE_22__.Material),
-/* harmony export */   MaterialManager: () => (/* reexport safe */ _core_graphics_materialManager__WEBPACK_IMPORTED_MODULE_23__.MaterialManager),
+/* harmony export */   MaterialManager: () => (/* reexport safe */ _core_graphics_materialManager__WEBPACK_IMPORTED_MODULE_24__.MaterialManager),
 /* harmony export */   Mesh: () => (/* reexport safe */ _core_3d_mesh__WEBPACK_IMPORTED_MODULE_5__.Mesh),
 /* harmony export */   MeshComponent: () => (/* reexport safe */ _core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_8__.MeshComponent),
 /* harmony export */   MeshComponentData: () => (/* reexport safe */ _core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_8__.MeshComponentData),
-/* harmony export */   Message: () => (/* reexport safe */ _core_com_message__WEBPACK_IMPORTED_MODULE_28__.Message),
-/* harmony export */   MessageBus: () => (/* reexport safe */ _core_com_messageBus__WEBPACK_IMPORTED_MODULE_29__.MessageBus),
-/* harmony export */   MessagePriority: () => (/* reexport safe */ _core_com_message__WEBPACK_IMPORTED_MODULE_28__.MessagePriority),
-/* harmony export */   MouseContext: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_30__.MouseContext),
+/* harmony export */   Message: () => (/* reexport safe */ _core_com_message__WEBPACK_IMPORTED_MODULE_29__.Message),
+/* harmony export */   MessageBus: () => (/* reexport safe */ _core_com_messageBus__WEBPACK_IMPORTED_MODULE_30__.MessageBus),
+/* harmony export */   MessagePriority: () => (/* reexport safe */ _core_com_message__WEBPACK_IMPORTED_MODULE_29__.MessagePriority),
+/* harmony export */   MouseContext: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_31__.MouseContext),
 /* harmony export */   ObjLoader: () => (/* reexport safe */ _core_3d_objLoader__WEBPACK_IMPORTED_MODULE_6__.ObjLoader),
 /* harmony export */   ParticleEmitter: () => (/* reexport safe */ _core_graphics_particleEmitter__WEBPACK_IMPORTED_MODULE_21__.ParticleEmitter),
-/* harmony export */   RotationBehavior: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_43__.RotationBehavior),
-/* harmony export */   RotationBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_43__.RotationBehaviorBuilder),
-/* harmony export */   RotationBehaviorData: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_43__.RotationBehaviorData),
-/* harmony export */   Scene: () => (/* reexport safe */ _core_world_scene__WEBPACK_IMPORTED_MODULE_33__.Scene),
+/* harmony export */   RotationBehavior: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_44__.RotationBehavior),
+/* harmony export */   RotationBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_44__.RotationBehaviorBuilder),
+/* harmony export */   RotationBehaviorData: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_44__.RotationBehaviorData),
+/* harmony export */   Scene: () => (/* reexport safe */ _core_world_scene__WEBPACK_IMPORTED_MODULE_34__.Scene),
 /* harmony export */   Shader: () => (/* reexport safe */ _core_gl_shader__WEBPACK_IMPORTED_MODULE_10__.Shader),
-/* harmony export */   SimObject: () => (/* reexport safe */ _core_world_simObject__WEBPACK_IMPORTED_MODULE_32__.SimObject),
+/* harmony export */   SimObject: () => (/* reexport safe */ _core_world_simObject__WEBPACK_IMPORTED_MODULE_33__.SimObject),
 /* harmony export */   Sprite: () => (/* reexport safe */ _core_graphics_sprite__WEBPACK_IMPORTED_MODULE_15__.Sprite),
 /* harmony export */   SpriteBatcher: () => (/* reexport safe */ _core_graphics_spriteBatcher__WEBPACK_IMPORTED_MODULE_20__.SpriteBatcher),
-/* harmony export */   SpriteComponent: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_38__.SpriteComponent),
-/* harmony export */   SpriteComponentBuilder: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_38__.SpriteComponentBuilder),
-/* harmony export */   SpriteComponentData: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_38__.SpriteComponentData),
+/* harmony export */   SpriteComponent: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_39__.SpriteComponent),
+/* harmony export */   SpriteComponentBuilder: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_39__.SpriteComponentBuilder),
+/* harmony export */   SpriteComponentData: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_39__.SpriteComponentData),
 /* harmony export */   Texture: () => (/* reexport safe */ _core_graphics_texture__WEBPACK_IMPORTED_MODULE_17__.Texture),
 /* harmony export */   TextureManager: () => (/* reexport safe */ _core_graphics_textureManager__WEBPACK_IMPORTED_MODULE_18__.TextureManager),
+/* harmony export */   TileMap: () => (/* reexport safe */ _core_graphics_tileMap__WEBPACK_IMPORTED_MODULE_23__.TileMap),
+/* harmony export */   TileSet: () => (/* reexport safe */ _core_graphics_tileMap__WEBPACK_IMPORTED_MODULE_23__.TileSet),
 /* harmony export */   UI: () => (/* reexport safe */ _core_ui_ui__WEBPACK_IMPORTED_MODULE_3__.UI),
 /* harmony export */   Vertex: () => (/* reexport safe */ _core_graphics_vertex__WEBPACK_IMPORTED_MODULE_14__.Vertex),
-/* harmony export */   Zone: () => (/* reexport safe */ _core_world_zone__WEBPACK_IMPORTED_MODULE_34__.Zone),
-/* harmony export */   ZoneManager: () => (/* reexport safe */ _core_world_zoneManager__WEBPACK_IMPORTED_MODULE_35__.ZoneManager),
-/* harmony export */   ZoneState: () => (/* reexport safe */ _core_world_zone__WEBPACK_IMPORTED_MODULE_34__.ZoneState),
+/* harmony export */   Zone: () => (/* reexport safe */ _core_world_zone__WEBPACK_IMPORTED_MODULE_35__.Zone),
+/* harmony export */   ZoneManager: () => (/* reexport safe */ _core_world_zoneManager__WEBPACK_IMPORTED_MODULE_36__.ZoneManager),
+/* harmony export */   ZoneState: () => (/* reexport safe */ _core_world_zone__WEBPACK_IMPORTED_MODULE_35__.ZoneState),
 /* harmony export */   gl: () => (/* reexport safe */ _core_gl_gl__WEBPACK_IMPORTED_MODULE_9__.gl),
 /* harmony export */   glAttrInfo: () => (/* reexport safe */ _core_gl_glBuffer__WEBPACK_IMPORTED_MODULE_12__.glAttrInfo),
 /* harmony export */   glBuffer: () => (/* reexport safe */ _core_gl_glBuffer__WEBPACK_IMPORTED_MODULE_12__.glBuffer),
-/* harmony export */   m4x4: () => (/* reexport safe */ _core_utils_m4x4__WEBPACK_IMPORTED_MODULE_26__.m4x4),
-/* harmony export */   transform: () => (/* reexport safe */ _core_utils_transform__WEBPACK_IMPORTED_MODULE_27__.transform),
-/* harmony export */   vec2: () => (/* reexport safe */ _core_utils_vec2__WEBPACK_IMPORTED_MODULE_24__.vec2),
-/* harmony export */   vec3: () => (/* reexport safe */ _core_utils_vec3__WEBPACK_IMPORTED_MODULE_25__.vec3)
+/* harmony export */   m4x4: () => (/* reexport safe */ _core_utils_m4x4__WEBPACK_IMPORTED_MODULE_27__.m4x4),
+/* harmony export */   transform: () => (/* reexport safe */ _core_utils_transform__WEBPACK_IMPORTED_MODULE_28__.transform),
+/* harmony export */   vec2: () => (/* reexport safe */ _core_utils_vec2__WEBPACK_IMPORTED_MODULE_25__.vec2),
+/* harmony export */   vec3: () => (/* reexport safe */ _core_utils_vec3__WEBPACK_IMPORTED_MODULE_26__.vec3)
 /* harmony export */ });
 /* harmony import */ var _core_game__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./core/game */ "./BdvEngine/core/game.ts");
 /* harmony import */ var _core_engine__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./core/engine */ "./BdvEngine/core/engine.ts");
@@ -4046,27 +4291,29 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _core_graphics_spriteBatcher__WEBPACK_IMPORTED_MODULE_20__ = __webpack_require__(/*! ./core/graphics/spriteBatcher */ "./BdvEngine/core/graphics/spriteBatcher.ts");
 /* harmony import */ var _core_graphics_particleEmitter__WEBPACK_IMPORTED_MODULE_21__ = __webpack_require__(/*! ./core/graphics/particleEmitter */ "./BdvEngine/core/graphics/particleEmitter.ts");
 /* harmony import */ var _core_graphics_material__WEBPACK_IMPORTED_MODULE_22__ = __webpack_require__(/*! ./core/graphics/material */ "./BdvEngine/core/graphics/material.ts");
-/* harmony import */ var _core_graphics_materialManager__WEBPACK_IMPORTED_MODULE_23__ = __webpack_require__(/*! ./core/graphics/materialManager */ "./BdvEngine/core/graphics/materialManager.ts");
-/* harmony import */ var _core_utils_vec2__WEBPACK_IMPORTED_MODULE_24__ = __webpack_require__(/*! ./core/utils/vec2 */ "./BdvEngine/core/utils/vec2.ts");
-/* harmony import */ var _core_utils_vec3__WEBPACK_IMPORTED_MODULE_25__ = __webpack_require__(/*! ./core/utils/vec3 */ "./BdvEngine/core/utils/vec3.ts");
-/* harmony import */ var _core_utils_m4x4__WEBPACK_IMPORTED_MODULE_26__ = __webpack_require__(/*! ./core/utils/m4x4 */ "./BdvEngine/core/utils/m4x4.ts");
-/* harmony import */ var _core_utils_transform__WEBPACK_IMPORTED_MODULE_27__ = __webpack_require__(/*! ./core/utils/transform */ "./BdvEngine/core/utils/transform.ts");
-/* harmony import */ var _core_com_message__WEBPACK_IMPORTED_MODULE_28__ = __webpack_require__(/*! ./core/com/message */ "./BdvEngine/core/com/message.ts");
-/* harmony import */ var _core_com_messageBus__WEBPACK_IMPORTED_MODULE_29__ = __webpack_require__(/*! ./core/com/messageBus */ "./BdvEngine/core/com/messageBus.ts");
-/* harmony import */ var _core_input_inputManager__WEBPACK_IMPORTED_MODULE_30__ = __webpack_require__(/*! ./core/input/inputManager */ "./BdvEngine/core/input/inputManager.ts");
-/* harmony import */ var _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_31__ = __webpack_require__(/*! ./core/assets/assetManager */ "./BdvEngine/core/assets/assetManager.ts");
-/* harmony import */ var _core_world_simObject__WEBPACK_IMPORTED_MODULE_32__ = __webpack_require__(/*! ./core/world/simObject */ "./BdvEngine/core/world/simObject.ts");
-/* harmony import */ var _core_world_scene__WEBPACK_IMPORTED_MODULE_33__ = __webpack_require__(/*! ./core/world/scene */ "./BdvEngine/core/world/scene.ts");
-/* harmony import */ var _core_world_zone__WEBPACK_IMPORTED_MODULE_34__ = __webpack_require__(/*! ./core/world/zone */ "./BdvEngine/core/world/zone.ts");
-/* harmony import */ var _core_world_zoneManager__WEBPACK_IMPORTED_MODULE_35__ = __webpack_require__(/*! ./core/world/zoneManager */ "./BdvEngine/core/world/zoneManager.ts");
-/* harmony import */ var _core_components_baseComponent__WEBPACK_IMPORTED_MODULE_36__ = __webpack_require__(/*! ./core/components/baseComponent */ "./BdvEngine/core/components/baseComponent.ts");
-/* harmony import */ var _core_components_componentManager__WEBPACK_IMPORTED_MODULE_37__ = __webpack_require__(/*! ./core/components/componentManager */ "./BdvEngine/core/components/componentManager.ts");
-/* harmony import */ var _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_38__ = __webpack_require__(/*! ./core/components/spriteComponent */ "./BdvEngine/core/components/spriteComponent.ts");
-/* harmony import */ var _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_39__ = __webpack_require__(/*! ./core/components/animatedSpriteComponent */ "./BdvEngine/core/components/animatedSpriteComponent.ts");
-/* harmony import */ var _core_behaviors_baseBehavior__WEBPACK_IMPORTED_MODULE_40__ = __webpack_require__(/*! ./core/behaviors/baseBehavior */ "./BdvEngine/core/behaviors/baseBehavior.ts");
-/* harmony import */ var _core_behaviors_behaviorManager__WEBPACK_IMPORTED_MODULE_41__ = __webpack_require__(/*! ./core/behaviors/behaviorManager */ "./BdvEngine/core/behaviors/behaviorManager.ts");
-/* harmony import */ var _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_42__ = __webpack_require__(/*! ./core/behaviors/keyboardMovementBehavior */ "./BdvEngine/core/behaviors/keyboardMovementBehavior.ts");
-/* harmony import */ var _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_43__ = __webpack_require__(/*! ./core/behaviors/rotationBehavior */ "./BdvEngine/core/behaviors/rotationBehavior.ts");
+/* harmony import */ var _core_graphics_tileMap__WEBPACK_IMPORTED_MODULE_23__ = __webpack_require__(/*! ./core/graphics/tileMap */ "./BdvEngine/core/graphics/tileMap.ts");
+/* harmony import */ var _core_graphics_materialManager__WEBPACK_IMPORTED_MODULE_24__ = __webpack_require__(/*! ./core/graphics/materialManager */ "./BdvEngine/core/graphics/materialManager.ts");
+/* harmony import */ var _core_utils_vec2__WEBPACK_IMPORTED_MODULE_25__ = __webpack_require__(/*! ./core/utils/vec2 */ "./BdvEngine/core/utils/vec2.ts");
+/* harmony import */ var _core_utils_vec3__WEBPACK_IMPORTED_MODULE_26__ = __webpack_require__(/*! ./core/utils/vec3 */ "./BdvEngine/core/utils/vec3.ts");
+/* harmony import */ var _core_utils_m4x4__WEBPACK_IMPORTED_MODULE_27__ = __webpack_require__(/*! ./core/utils/m4x4 */ "./BdvEngine/core/utils/m4x4.ts");
+/* harmony import */ var _core_utils_transform__WEBPACK_IMPORTED_MODULE_28__ = __webpack_require__(/*! ./core/utils/transform */ "./BdvEngine/core/utils/transform.ts");
+/* harmony import */ var _core_com_message__WEBPACK_IMPORTED_MODULE_29__ = __webpack_require__(/*! ./core/com/message */ "./BdvEngine/core/com/message.ts");
+/* harmony import */ var _core_com_messageBus__WEBPACK_IMPORTED_MODULE_30__ = __webpack_require__(/*! ./core/com/messageBus */ "./BdvEngine/core/com/messageBus.ts");
+/* harmony import */ var _core_input_inputManager__WEBPACK_IMPORTED_MODULE_31__ = __webpack_require__(/*! ./core/input/inputManager */ "./BdvEngine/core/input/inputManager.ts");
+/* harmony import */ var _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_32__ = __webpack_require__(/*! ./core/assets/assetManager */ "./BdvEngine/core/assets/assetManager.ts");
+/* harmony import */ var _core_world_simObject__WEBPACK_IMPORTED_MODULE_33__ = __webpack_require__(/*! ./core/world/simObject */ "./BdvEngine/core/world/simObject.ts");
+/* harmony import */ var _core_world_scene__WEBPACK_IMPORTED_MODULE_34__ = __webpack_require__(/*! ./core/world/scene */ "./BdvEngine/core/world/scene.ts");
+/* harmony import */ var _core_world_zone__WEBPACK_IMPORTED_MODULE_35__ = __webpack_require__(/*! ./core/world/zone */ "./BdvEngine/core/world/zone.ts");
+/* harmony import */ var _core_world_zoneManager__WEBPACK_IMPORTED_MODULE_36__ = __webpack_require__(/*! ./core/world/zoneManager */ "./BdvEngine/core/world/zoneManager.ts");
+/* harmony import */ var _core_components_baseComponent__WEBPACK_IMPORTED_MODULE_37__ = __webpack_require__(/*! ./core/components/baseComponent */ "./BdvEngine/core/components/baseComponent.ts");
+/* harmony import */ var _core_components_componentManager__WEBPACK_IMPORTED_MODULE_38__ = __webpack_require__(/*! ./core/components/componentManager */ "./BdvEngine/core/components/componentManager.ts");
+/* harmony import */ var _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_39__ = __webpack_require__(/*! ./core/components/spriteComponent */ "./BdvEngine/core/components/spriteComponent.ts");
+/* harmony import */ var _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_40__ = __webpack_require__(/*! ./core/components/animatedSpriteComponent */ "./BdvEngine/core/components/animatedSpriteComponent.ts");
+/* harmony import */ var _core_behaviors_baseBehavior__WEBPACK_IMPORTED_MODULE_41__ = __webpack_require__(/*! ./core/behaviors/baseBehavior */ "./BdvEngine/core/behaviors/baseBehavior.ts");
+/* harmony import */ var _core_behaviors_behaviorManager__WEBPACK_IMPORTED_MODULE_42__ = __webpack_require__(/*! ./core/behaviors/behaviorManager */ "./BdvEngine/core/behaviors/behaviorManager.ts");
+/* harmony import */ var _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_43__ = __webpack_require__(/*! ./core/behaviors/keyboardMovementBehavior */ "./BdvEngine/core/behaviors/keyboardMovementBehavior.ts");
+/* harmony import */ var _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_44__ = __webpack_require__(/*! ./core/behaviors/rotationBehavior */ "./BdvEngine/core/behaviors/rotationBehavior.ts");
+
 
 
 
@@ -4115,94 +4362,473 @@ __webpack_require__.r(__webpack_exports__);
 
 /***/ },
 
-/***/ "./example/my3DGame.ts"
-/*!*****************************!*\
-  !*** ./example/my3DGame.ts ***!
-  \*****************************/
+/***/ "./example/terrainGame.ts"
+/*!********************************!*\
+  !*** ./example/terrainGame.ts ***!
+  \********************************/
 (__unused_webpack_module, __webpack_exports__, __webpack_require__) {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   My3DGame: () => (/* binding */ My3DGame)
+/* harmony export */   TerrainGame: () => (/* binding */ TerrainGame)
 /* harmony export */ });
 /* harmony import */ var _BdvEngine__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../BdvEngine */ "./BdvEngine/index.ts");
-/* harmony import */ var _BdvEngine_core_3d_mesh__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../BdvEngine/core/3d/mesh */ "./BdvEngine/core/3d/mesh.ts");
-/* harmony import */ var _BdvEngine_core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ../BdvEngine/core/3d/meshComponent */ "./BdvEngine/core/3d/meshComponent.ts");
 
-
-
-class My3DGame extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Game {
+class SeededRng {
+    constructor(seed) {
+        this.state = seed % 2147483647;
+        if (this.state <= 0)
+            this.state += 2147483646;
+    }
+    next() {
+        this.state = (this.state * 16807) % 2147483647;
+        return (this.state - 1) / 2147483646;
+    }
+    nextInt(min, max) {
+        return Math.floor(this.next() * (max - min + 1)) + min;
+    }
+}
+class Noise {
+    constructor(seed) {
+        this.perm = [];
+        for (let i = 0; i < 256; i++)
+            this.perm[i] = i;
+        let rng = new SeededRng(seed);
+        for (let i = 255; i > 0; i--) {
+            let j = rng.nextInt(0, i);
+            [this.perm[i], this.perm[j]] = [this.perm[j], this.perm[i]];
+        }
+        for (let i = 0; i < 256; i++)
+            this.perm[256 + i] = this.perm[i];
+    }
+    hash(x, y) {
+        return this.perm[(this.perm[x & 255] + y) & 511];
+    }
+    lerp(a, b, t) { return a + t * (b - a); }
+    smooth(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+    get(x, y) {
+        let xi = Math.floor(x), yi = Math.floor(y);
+        let xf = x - xi, yf = y - yi;
+        let sx = this.smooth(xf), sy = this.smooth(yf);
+        let a = this.hash(xi, yi) / 255;
+        let b = this.hash(xi + 1, yi) / 255;
+        let c = this.hash(xi, yi + 1) / 255;
+        let d = this.hash(xi + 1, yi + 1) / 255;
+        return this.lerp(this.lerp(a, b, sx), this.lerp(c, d, sx), sy);
+    }
+    fbm(x, y, octaves = 4) {
+        let val = 0, amp = 0.5, freq = 1, max = 0;
+        for (let i = 0; i < octaves; i++) {
+            val += this.get(x * freq, y * freq) * amp;
+            max += amp;
+            amp *= 0.5;
+            freq *= 2;
+        }
+        return val / max;
+    }
+}
+const TILE_ROAD = 25;
+const TILE_HOUSE = 26;
+const TILE_BARRACKS = 27;
+const TILE_TOWER = 28;
+const TILE_CASTLE = 29;
+const TILE_OAK = 30;
+const TILE_PINE = 31;
+const TILE_AUTUMN = 32;
+const TILE_SNOW_PINE = 33;
+const TILE_ROCK = 34;
+const TILE_BUSH = 35;
+function heightToTile(h) {
+    if (h < 0.20)
+        return 0;
+    if (h < 0.28)
+        return 1;
+    if (h < 0.33)
+        return 2;
+    if (h < 0.36)
+        return 3;
+    if (h < 0.39)
+        return 4;
+    if (h < 0.42)
+        return 5;
+    if (h < 0.45)
+        return 7;
+    if (h < 0.50)
+        return 8;
+    if (h < 0.56)
+        return 9;
+    if (h < 0.62)
+        return 10;
+    if (h < 0.67)
+        return 11;
+    if (h < 0.72)
+        return 12;
+    if (h < 0.76)
+        return 13;
+    if (h < 0.80)
+        return 16;
+    if (h < 0.84)
+        return 19;
+    if (h < 0.88)
+        return 20;
+    if (h < 0.92)
+        return 21;
+    if (h < 0.96)
+        return 22;
+    return 23;
+}
+function isLand(tileIdx) {
+    return tileIdx >= 4;
+}
+function isWater(tileIdx) {
+    return tileIdx <= 3;
+}
+function spawnFortresses(tileMap, heightMap, mapSize, count, rng) {
+    let forts = [];
+    let minDist = 80;
+    let attempts = 0;
+    while (forts.length < count && attempts < count * 100) {
+        attempts++;
+        let margin = 30;
+        let x = rng.nextInt(margin, mapSize - margin);
+        let y = rng.nextInt(margin, mapSize - margin);
+        let h = heightMap[y * mapSize + x];
+        if (h < 0.42 || h > 0.78)
+            continue;
+        let tooClose = false;
+        for (let f of forts) {
+            let dx = f.x - x, dy = f.y - y;
+            if (dx * dx + dy * dy < minDist * minDist) {
+                tooClose = true;
+                break;
+            }
+        }
+        if (tooClose)
+            continue;
+        let size = rng.nextInt(5, 9);
+        forts.push({ x, y, size });
+    }
+    return forts;
+}
+function placeFortress(terrainMap, overlayMap, fx, fy, half, rng) {
+    overlayMap.setTile(fx, fy, TILE_CASTLE);
+    let buildingCount = rng.nextInt(3, Math.max(4, half));
+    for (let i = 0; i < buildingCount; i++) {
+        let dx = rng.nextInt(-half, half);
+        let dy = rng.nextInt(-half, half);
+        if (dx === 0 && dy === 0)
+            continue;
+        let tx = fx + dx, ty = fy + dy;
+        let terrain = terrainMap.getTile(tx, ty);
+        if (isWater(terrain))
+            continue;
+        if (overlayMap.getTile(tx, ty) >= 0)
+            continue;
+        let dist = Math.sqrt(dx * dx + dy * dy);
+        let type;
+        if (dist < half * 0.4) {
+            type = rng.next() > 0.5 ? TILE_BARRACKS : TILE_TOWER;
+        }
+        else {
+            type = TILE_HOUSE;
+        }
+        overlayMap.setTile(tx, ty, type);
+    }
+}
+function placeRoadTile(tileMap, x, y) {
+    let current = tileMap.getTile(x, y);
+    if (current === TILE_HOUSE || current === TILE_BARRACKS ||
+        current === TILE_TOWER || current === TILE_CASTLE || isWater(current))
+        return;
+    tileMap.setTile(x, y, TILE_ROAD);
+}
+function drawRoad(tileMap, x0, y0, x1, y1, rng) {
+    let horizontalFirst = rng.next() > 0.5;
+    let x = x0, y = y0;
+    if (horizontalFirst) {
+        let sx = x0 < x1 ? 1 : -1;
+        while (x !== x1) {
+            placeRoadTile(tileMap, x, y);
+            x += sx;
+        }
+        let sy = y0 < y1 ? 1 : -1;
+        while (y !== y1) {
+            placeRoadTile(tileMap, x, y);
+            y += sy;
+        }
+    }
+    else {
+        let sy = y0 < y1 ? 1 : -1;
+        while (y !== y1) {
+            placeRoadTile(tileMap, x, y);
+            y += sy;
+        }
+        let sx = x0 < x1 ? 1 : -1;
+        while (x !== x1) {
+            placeRoadTile(tileMap, x, y);
+            x += sx;
+        }
+    }
+    placeRoadTile(tileMap, x1, y1);
+}
+function connectFortresses(tileMap, forts, rng) {
+    if (forts.length < 2)
+        return;
+    for (let i = 0; i < forts.length; i++) {
+        if (rng.next() < 0.3)
+            continue;
+        let distances = [];
+        for (let j = 0; j < forts.length; j++) {
+            if (i === j)
+                continue;
+            let dx = forts[i].x - forts[j].x;
+            let dy = forts[i].y - forts[j].y;
+            distances.push({ idx: j, dist: Math.sqrt(dx * dx + dy * dy) });
+        }
+        distances.sort((a, b) => a.dist - b.dist);
+        let maxConnections = rng.nextInt(1, 2);
+        for (let c = 0; c < Math.min(maxConnections, distances.length); c++) {
+            if (rng.next() < 0.4)
+                continue;
+            let target = forts[distances[c].idx];
+            drawRoad(tileMap, forts[i].x, forts[i].y, target.x, target.y, rng);
+        }
+    }
+}
+const TILE_NAMES = {
+    0: "Deep Water", 1: "Water", 2: "Shallow", 3: "Shore",
+    4: "Wet Sand", 5: "Sand", 6: "Dark Sand", 7: "Sand-Grass",
+    8: "Light Grass", 9: "Grass", 10: "Dark Grass", 11: "Dense Grass",
+    12: "Light Forest", 13: "Dense Forest", 14: "Dark Forest", 15: "Dirt",
+    16: "Rock", 17: "Light Rock", 18: "Mountain Base", 19: "Mountain",
+    20: "Mountain Peak", 21: "Snow Rock", 22: "Snow", 23: "Bright Snow",
+    24: "Dirt Road", 25: "Cobblestone", 26: "House", 27: "Barracks",
+    28: "Tower", 29: "Castle",
+    30: "Oak Tree", 31: "Pine Tree", 32: "Autumn Tree", 33: "Snow Pine",
+    34: "Rock", 35: "Bush",
+};
+function tileIndexName(idx) {
+    return TILE_NAMES[idx] || `Tile ${idx}`;
+}
+const MAP_SIZE = 1024;
+const TILE_RENDER_SIZE = 64;
+const NOISE_SCALE = 0.006;
+const FORTRESS_COUNT = 60;
+class TerrainGame extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Game {
     constructor() {
         super(...arguments);
-        this.elapsed = 0;
-    }
-    setEngine(engine) {
-        this.engine3d = engine;
+        this.camX = MAP_SIZE * TILE_RENDER_SIZE / 2;
+        this.camY = MAP_SIZE * TILE_RENDER_SIZE / 2;
+        this.zoom = 1;
+        this.camSpeed = 0.6;
+        this.seed = 54321;
+        this.hoverTileX = -1;
+        this.hoverTileY = -1;
+        this.selectedTileX = -1;
+        this.selectedTileY = -1;
     }
     init() {
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.MaterialManager.register(new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Material("crate", "assets/textures/block.png", _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white()));
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.MaterialManager.register(new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Material("white", "assets/textures/block.png", new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color(200, 200, 220, 255)));
-        this.scene = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Scene();
-        let cube = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.SimObject(1, "cube");
-        cube.transform.position.vx = 0;
-        cube.transform.position.vy = 0.5;
-        cube.transform.position.vz = 0;
-        cube.addComponent(new _BdvEngine_core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_2__.MeshComponent(_BdvEngine_core_3d_mesh__WEBPACK_IMPORTED_MODULE_1__.Mesh.cube(), "crate"));
-        this.scene.addObject(cube);
-        let child = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.SimObject(2, "child");
-        child.transform.position.vx = 2;
-        child.transform.position.vy = 0;
-        child.transform.scale = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.vec3(0.4, 0.4, 0.4);
-        child.addComponent(new _BdvEngine_core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_2__.MeshComponent(_BdvEngine_core_3d_mesh__WEBPACK_IMPORTED_MODULE_1__.Mesh.cube(), "crate"));
-        cube.addChild(child);
-        let grandchild = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.SimObject(5, "grandchild");
-        grandchild.transform.position.vx = 1.5;
-        grandchild.transform.scale = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.vec3(0.5, 0.5, 0.5);
-        grandchild.addComponent(new _BdvEngine_core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_2__.MeshComponent(_BdvEngine_core_3d_mesh__WEBPACK_IMPORTED_MODULE_1__.Mesh.sphere(12, 8), "white"));
-        child.addChild(grandchild);
-        let sphere = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.SimObject(3, "sphere");
-        sphere.transform.position.vx = -2;
-        sphere.transform.position.vy = 0.5;
-        sphere.transform.position.vz = 0;
-        sphere.addComponent(new _BdvEngine_core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_2__.MeshComponent(_BdvEngine_core_3d_mesh__WEBPACK_IMPORTED_MODULE_1__.Mesh.sphere(24, 16), "white"));
-        this.scene.addObject(sphere);
-        let ground = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.SimObject(4, "ground");
-        ground.transform.scale = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.vec3(10, 1, 10);
-        ground.addComponent(new _BdvEngine_core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_2__.MeshComponent(_BdvEngine_core_3d_mesh__WEBPACK_IMPORTED_MODULE_1__.Mesh.plane(1), "white"));
-        this.scene.addObject(ground);
-        this.scene.load();
+        this.tileSet = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.TileSet({
+            imagePath: "assets/textures/terrain.png",
+            tileWidth: 64,
+            tileHeight: 64,
+            materialName: "terrain_tiles",
+        });
+        this.tileSet.filtering = 'nearest';
+        let lodTileSet = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.TileSet({
+            imagePath: "assets/textures/terrain_lod.png",
+            tileWidth: 16,
+            tileHeight: 16,
+            materialName: "terrain_lod",
+        });
+        this.tileMap = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.TileMap(this.tileSet, MAP_SIZE, MAP_SIZE, TILE_RENDER_SIZE);
+        this.tileMap.lodTileSet = lodTileSet;
+        this.tileMap.importantTiles.add(TILE_ROAD);
+        this.overlayMap = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.TileMap(this.tileSet, MAP_SIZE, MAP_SIZE, TILE_RENDER_SIZE);
+        this.overlayMap.heightScale = 0;
+        this.overlayMap.shadowStrength = 0;
+        this.overlayMap.importantTiles.add(TILE_HOUSE);
+        this.overlayMap.importantTiles.add(TILE_BARRACKS);
+        this.overlayMap.importantTiles.add(TILE_TOWER);
+        this.overlayMap.importantTiles.add(TILE_CASTLE);
+        this.heightMap = new Float32Array(MAP_SIZE * MAP_SIZE);
+        this.generateWorld(this.seed);
         let panel = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.panel(10, 40, {
-            width: "200px",
+            width: "280px",
             padding: "10px",
             background: "rgba(0,0,0,0.7)",
             borderRadius: "6px",
         });
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.heading(panel, "BdvEngine 3D", { color: "#4af" });
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.text(panel, "Parent → child → grandchild");
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.text(panel, "hierarchy with Phong lighting");
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.heading(panel, "Terrain Generator", { color: "#4af" });
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.text(panel, `${MAP_SIZE}×${MAP_SIZE} tiles, ${FORTRESS_COUNT} fortresses`);
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.text(panel, "WASD to move, scroll to zoom");
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.spacer(panel);
+        let seedRow = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.row(panel);
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.text(seedRow, "Seed:", { marginRight: "4px" });
+        let seedInput = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.input(seedRow, String(this.seed), () => { }, { width: "80px" });
+        seedInput.value = String(this.seed);
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.button(seedRow, "Generate", () => {
+            let val = parseInt(seedInput.value);
+            if (!isNaN(val) && val > 0) {
+                this.seed = val;
+                this.generateWorld(this.seed);
+            }
+        });
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.button(panel, "Random Seed", () => {
+            this.seed = Math.floor(Math.random() * 999999) + 1;
+            seedInput.value = String(this.seed);
+            this.generateWorld(this.seed);
+        });
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.spacer(panel);
+        this.coordsText = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.text(panel, "", { fontSize: "12px", fontFamily: "monospace" });
+        this.tileInfoText = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.text(panel, "", { fontSize: "12px", fontFamily: "monospace" });
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Message.subscribe("MOUSE_DOWN", this);
+    }
+    onMessage(message) {
+        if (message.code === "MOUSE_DOWN") {
+            if (this.hoverTileX >= 0 && this.hoverTileY >= 0) {
+                this.selectedTileX = this.hoverTileX;
+                this.selectedTileY = this.hoverTileY;
+            }
+        }
+    }
+    generateWorld(seed) {
+        let noise = new Noise(seed);
+        let rng = new SeededRng(seed);
+        this.overlayMap.fill(-1);
+        for (let y = 0; y < MAP_SIZE; y++) {
+            for (let x = 0; x < MAP_SIZE; x++) {
+                let dx = (x / MAP_SIZE - 0.5) * 2;
+                let dy = (y / MAP_SIZE - 0.5) * 2;
+                let distSq = dx * dx + dy * dy;
+                let island = 1 - Math.min(1, distSq * 0.8);
+                let h = noise.fbm(x * NOISE_SCALE, y * NOISE_SCALE, 6) * island;
+                h = h * 0.85 + 0.15;
+                let latitude = Math.abs(dy);
+                let snowLine = 0.7;
+                if (latitude > snowLine && h > 0.30) {
+                    let snowBlend = (latitude - snowLine) / (1.0 - snowLine);
+                    snowBlend = snowBlend * snowBlend;
+                    h = h + snowBlend * (1.0 - h) * 0.8;
+                }
+                this.heightMap[y * MAP_SIZE + x] = h;
+                this.tileMap.setTile(x, y, heightToTile(h));
+                this.tileMap.setHeight(x, y, h);
+            }
+        }
+        for (let y = 0; y < MAP_SIZE; y++) {
+            for (let x = 0; x < MAP_SIZE; x++) {
+                let h = this.heightMap[y * MAP_SIZE + x];
+                let tile = this.tileMap.getTile(x, y);
+                if (isWater(tile))
+                    continue;
+                let latitude = Math.abs((y / MAP_SIZE - 0.5) * 2);
+                let roll = rng.next();
+                if (tile >= 8 && tile <= 11) {
+                    if (roll < 0.08) {
+                        this.overlayMap.setTile(x, y, rng.next() > 0.3 ? TILE_OAK : TILE_BUSH);
+                    }
+                }
+                else if (tile >= 12 && tile <= 14) {
+                    if (roll < 0.25) {
+                        this.overlayMap.setTile(x, y, rng.next() > 0.4 ? TILE_PINE : TILE_OAK);
+                    }
+                }
+                else if (tile >= 4 && tile <= 7) {
+                    if (roll < 0.02) {
+                        this.overlayMap.setTile(x, y, TILE_ROCK);
+                    }
+                }
+                else if (tile >= 16 && tile <= 20) {
+                    if (roll < 0.06) {
+                        this.overlayMap.setTile(x, y, TILE_ROCK);
+                    }
+                }
+                else if (tile >= 21 && tile <= 23) {
+                    if (latitude < 0.85 && roll < 0.05) {
+                        this.overlayMap.setTile(x, y, TILE_SNOW_PINE);
+                    }
+                }
+            }
+        }
+        let forts = spawnFortresses(this.tileMap, this.heightMap, MAP_SIZE, FORTRESS_COUNT, rng);
+        for (let f of forts) {
+            placeFortress(this.tileMap, this.overlayMap, f.x, f.y, f.size, rng);
+        }
+        connectFortresses(this.tileMap, forts, rng);
+        this.camX = MAP_SIZE * TILE_RENDER_SIZE / 2;
+        this.camY = MAP_SIZE * TILE_RENDER_SIZE / 2;
     }
     update(deltaTime) {
-        this.elapsed += deltaTime / 1000;
-        this.scene.update(deltaTime);
-        let cube = this.scene.getObjectByName("cube");
-        if (cube)
-            cube.transform.rotation.vy = this.elapsed * 0.8;
-        let child = this.scene.getObjectByName("child");
-        if (child)
-            child.transform.rotation.vy = this.elapsed * 3;
-        let grandchild = this.scene.getObjectByName("grandchild");
-        if (grandchild)
-            grandchild.transform.rotation.vx = this.elapsed * 2;
-        if (this.engine3d) {
-            let camDist = 6;
-            let camHeight = 3;
-            let angle = this.elapsed * 0.3;
-            this.engine3d.camera.position = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.vec3(Math.cos(angle) * camDist, camHeight, Math.sin(angle) * camDist);
-            this.engine3d.camera.target = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.vec3(0, 0.5, 0);
+        let speed = this.camSpeed * deltaTime / this.zoom;
+        if (_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.isKeyDown(_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Keys.W) || _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.isKeyDown(_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Keys.UP))
+            this.camY -= speed;
+        if (_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.isKeyDown(_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Keys.S) || _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.isKeyDown(_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Keys.DOWN))
+            this.camY += speed;
+        if (_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.isKeyDown(_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Keys.A) || _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.isKeyDown(_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Keys.LEFT))
+            this.camX -= speed;
+        if (_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.isKeyDown(_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Keys.D) || _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.isKeyDown(_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Keys.RIGHT))
+            this.camX += speed;
+        let wheel = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.consumeWheelDelta();
+        if (wheel !== 0) {
+            this.zoom = Math.max(0.02, Math.min(12, this.zoom * (wheel > 0 ? 0.85 : 1.15)));
+        }
+        let worldSize = MAP_SIZE * TILE_RENDER_SIZE;
+        this.camX = Math.max(0, Math.min(worldSize, this.camX));
+        this.camY = Math.max(0, Math.min(worldSize, this.camY));
+        let mouse = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.getMousePosition();
+        let screenW = window.innerWidth;
+        let screenH = window.innerHeight;
+        let offsetX = screenW / 2 - this.camX * this.zoom;
+        let offsetY = screenH / 2 - this.camY * this.zoom;
+        let ts = TILE_RENDER_SIZE * this.zoom;
+        this.hoverTileX = Math.floor((mouse.vx - offsetX) / ts);
+        this.hoverTileY = Math.floor((mouse.vy - offsetY) / ts);
+        if (this.hoverTileX < 0 || this.hoverTileX >= MAP_SIZE ||
+            this.hoverTileY < 0 || this.hoverTileY >= MAP_SIZE) {
+            this.hoverTileX = -1;
+            this.hoverTileY = -1;
+        }
+        let camTileX = Math.floor(this.camX / TILE_RENDER_SIZE);
+        let camTileY = Math.floor(this.camY / TILE_RENDER_SIZE);
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.setText(this.coordsText, `Cam: ${camTileX},${camTileY} | Zoom: ${this.zoom.toFixed(1)}x | Seed: ${this.seed}`);
+        if (this.hoverTileX >= 0) {
+            let tileIdx = this.tileMap.getTile(this.hoverTileX, this.hoverTileY);
+            let h = this.heightMap[this.hoverTileY * MAP_SIZE + this.hoverTileX] || 0;
+            let tileName = tileIndexName(tileIdx);
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.setText(this.tileInfoText, `Hover: ${this.hoverTileX},${this.hoverTileY} | ${tileName} (h:${h.toFixed(2)})`);
+        }
+        else {
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.setText(this.tileInfoText, "");
         }
     }
     render(shader) {
-        this.scene.render(shader);
+        let screenW = window.innerWidth;
+        let screenH = window.innerHeight;
+        this.tileMap.render(this.camX, this.camY, this.zoom, screenW, screenH);
+        this.overlayMap.render(this.camX, this.camY, this.zoom, screenW, screenH);
+        let ts = TILE_RENDER_SIZE * this.zoom;
+        let offsetX = screenW / 2 - this.camX * this.zoom;
+        let offsetY = screenH / 2 - this.camY * this.zoom;
+        let hs = this.tileMap.heightScale * this.zoom;
+        if (this.selectedTileX >= 0) {
+            let selH = this.tileMap.getHeight(this.selectedTileX, this.selectedTileY);
+            let sx = Math.round(this.selectedTileX * ts + offsetX);
+            let sy = Math.round(this.selectedTileY * ts + offsetY - selH * hs);
+            let sw = Math.round((this.selectedTileX + 1) * ts + offsetX) - sx;
+            let sh = Math.round((this.selectedTileY + 1) * ts + offsetY - selH * hs) - sy;
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rectOutline(sx, sy, sw, sh, new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color(255, 255, 0, 255));
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rectOutline(sx + 1, sy + 1, sw - 2, sh - 2, new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color(255, 255, 0, 120));
+        }
+        if (this.hoverTileX >= 0) {
+            let hovH = this.tileMap.getHeight(this.hoverTileX, this.hoverTileY);
+            let hx = Math.round(this.hoverTileX * ts + offsetX);
+            let hy = Math.round(this.hoverTileY * ts + offsetY - hovH * hs);
+            let hw = Math.round((this.hoverTileX + 1) * ts + offsetX) - hx;
+            let hh = Math.round((this.hoverTileY + 1) * ts + offsetY - hovH * hs) - hy;
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rectOutline(hx, hy, hw, hh, new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color(255, 255, 255, 200));
+        }
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.flush(shader);
     }
 }
 
@@ -4274,12 +4900,12 @@ class My3DGame extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Game {
 var __webpack_exports__ = {};
 // This entry needs to be wrapped in an IIFE because it needs to be isolated against other modules in the chunk.
 (() => {
-/*!**************************!*\
-  !*** ./example/app3d.ts ***!
-  \**************************/
+/*!*******************************!*\
+  !*** ./example/appTerrain.ts ***!
+  \*******************************/
 __webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _BdvEngine_core_engine3d__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../BdvEngine/core/engine3d */ "./BdvEngine/core/engine3d.ts");
-/* harmony import */ var _my3DGame__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./my3DGame */ "./example/my3DGame.ts");
+/* harmony import */ var _BdvEngine__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../BdvEngine */ "./BdvEngine/index.ts");
+/* harmony import */ var _terrainGame__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./terrainGame */ "./example/terrainGame.ts");
 
 
 let engine;
@@ -4287,13 +4913,10 @@ window.onload = () => {
     const canvas = document.createElement("canvas");
     canvas.id = "mainFrame";
     document.body.appendChild(canvas);
-    let game = new _my3DGame__WEBPACK_IMPORTED_MODULE_1__.My3DGame();
-    engine = new _BdvEngine_core_engine3d__WEBPACK_IMPORTED_MODULE_0__.Engine3D(canvas, game, {
+    engine = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Engine(canvas, new _terrainGame__WEBPACK_IMPORTED_MODULE_1__.TerrainGame(), {
         targetFps: 60,
         showFps: true,
-        clearColor: [0.1, 0.1, 0.15, 1],
     });
-    game.setEngine(engine);
     engine.start();
 };
 window.onresize = () => {

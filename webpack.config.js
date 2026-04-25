@@ -1,6 +1,10 @@
 const path = require("path");
 
-const entry = process.env.ENTRY === "3d" ? "./example/app3d.ts" : "./example/app.ts";
+const entries = {
+  "3d": "./example/app3d.ts",
+  "terrain": "./example/appTerrain.ts",
+};
+const entry = entries[process.env.ENTRY] || "./example/app.ts";
 
 module.exports = {
   entry: entry,

@@ -30,6 +30,7 @@ export { Draw } from './core/graphics/draw';
 export { SpriteBatcher } from './core/graphics/spriteBatcher';
 export { ParticleEmitter, ParticleConfig, ParticleShape } from './core/graphics/particleEmitter';
 export { Material, UniformValue } from './core/graphics/material';
+export { TileSet, TileSetConfig, TileMap } from './core/graphics/tileMap';
 export { MaterialManager } from './core/graphics/materialManager';
 
 // Utils
