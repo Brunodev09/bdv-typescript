@@ -13,6 +13,14 @@ import {
   Material,
   MaterialManager,
   SpriteBatcher,
+  SimObject,
+  Scene,
+  AnimatedSpriteComponent,
+  AnimatedSpriteComponentData,
+  StatefulAnimationBehavior,
+  StatefulAnimationBehaviorData,
+  BaseBehavior,
+  IBehaviorData,
 } from '../BdvEngine';
 
 // ---- Seeded RNG ----
@@ -138,8 +146,75 @@ interface City {
 interface Building {
   tileX: number;
   tileY: number;
-  spriteCol: number; // column in spritesheet (0-7)
-  spriteRow: number; // row in spritesheet (0-7)
+  spriteCol: number;
+  spriteRow: number;
+}
+
+/** Simple wandering behavior for humans. */
+class WanderBehaviorData implements IBehaviorData {
+  public name: string = "wander";
+  public speed: number = 0.03;
+  public range: number = 300;
+  public setFromJson(json: any): void {
+    if (json.name) this.name = json.name;
+    if (json.speed) this.speed = json.speed;
+    if (json.range) this.range = json.range;
+  }
+}
+
+class WanderBehavior extends BaseBehavior {
+  private targetX: number = 0;
+  private targetY: number = 0;
+  private speed: number;
+  private range: number;
+  private hasTarget: boolean = false;
+  private animBehavior: StatefulAnimationBehavior | null = null;
+
+  constructor(data: WanderBehaviorData) {
+    super(data);
+    this.speed = data.speed;
+    this.range = data.range;
+  }
+
+  update(time: number): void {
+    if (!this._owner) return;
+
+    // Resolve animation behavior once
+    if (!this.animBehavior) {
+      let b = this._owner.getBehavior("animState");
+      if (b && b instanceof StatefulAnimationBehavior) {
+        this.animBehavior = b;
+      }
+    }
+
+    let pos = this._owner.transform.position;
+
+    // Pick a target if needed
+    if (!this.hasTarget) {
+      this.targetX = pos.vx + (Math.random() - 0.5) * this.range * 2;
+      this.targetY = pos.vy + (Math.random() - 0.5) * this.range * 2;
+      this.hasTarget = true;
+    }
+
+    let dx = this.targetX - pos.vx;
+    let dy = this.targetY - pos.vy;
+    let dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < 5) {
+      // Arrived — immediately pick new target, no idle pause
+      this.hasTarget = false;
+    } else {
+      // Move toward target
+      let move = this.speed * time;
+      pos.vx += (dx / dist) * move;
+      pos.vy += (dy / dist) * move;
+
+      // Set animation state based on direction
+      if (this.animBehavior) {
+        this.animBehavior.setState(dx > 0 ? "walk_right" : "walk_left");
+      }
+    }
+  }
 }
 
 export class TerrainGame extends Game implements IMessageHandler {
@@ -149,13 +224,10 @@ export class TerrainGame extends Game implements IMessageHandler {
   private heightMap!: Float32Array;
   private biomeMap!: Uint8Array;
   private buildings: Building[] = [];
-  private buildingTexLoaded = false;
+  private humanScene!: Scene;
   private occupiedTiles: Set<number> = new Set(); // blocked tiles (building + margin)
   private buildingTiles: Set<number> = new Set(); // only tiles with actual buildings
 
-  private camX = MAP_SIZE * TILE_RENDER_SIZE / 2;
-  private camY = MAP_SIZE * TILE_RENDER_SIZE / 2;
-  private zoom = 0.5;
   private camSpeed = 0.6;
 
   private coordsText!: HTMLDivElement;
@@ -188,6 +260,11 @@ export class TerrainGame extends Game implements IMessageHandler {
     this.overlayMap.shadowStrength = 0;
     // No LOD tileset for overlay — items just disappear when too small
     // No important tiles — everything fades out at extreme zoom
+
+    // Human spritesheet: 8 frames × 2 rows, 50×96 per frame
+    MaterialManager.register(
+      new Material("human_mat", "assets/textures/human_walking.png", Color.white()),
+    );
 
     // Register building texture as a material for SpriteBatcher rendering
     MaterialManager.register(
@@ -290,10 +367,8 @@ export class TerrainGame extends Game implements IMessageHandler {
     let varNoise = new Noise(seed + 500);
 
     // Helper: pick a grass variant deterministically from position
-    const GRASS_VARIANTS = [0, 5, 6, 7]; // row 1 cols 1, 7, 8, 9
     function grassTile(x: number, y: number): number {
-      let v = varNoise.get(x * 0.3, y * 0.3);
-      return GRASS_START + GRASS_VARIANTS[Math.floor(v * GRASS_VARIANTS.length) % GRASS_VARIANTS.length];
+      return GRASS_START; // single grass tile
     }
     function snowTile(x: number, y: number): number {
       let v = varNoise.get(x * 0.3 + 100, y * 0.3 + 100);
@@ -559,36 +634,89 @@ export class TerrainGame extends Game implements IMessageHandler {
       }
     }
 
-    this.camX = MAP_SIZE * TILE_RENDER_SIZE / 2;
-    this.camY = MAP_SIZE * TILE_RENDER_SIZE / 2;
+    // Spawn humans near cities using engine scene/component/behavior system
+    this.humanScene = new Scene();
+    let humanId = 0;
+    for (let city of cities) {
+      let humanCount = rng.nextInt(3, 8);
+      for (let i = 0; i < humanCount; i++) {
+        let hx = (city.x + rng.nextInt(-city.size, city.size)) * TILE_RENDER_SIZE;
+        let hy = (city.y + rng.nextInt(-city.size, city.size)) * TILE_RENDER_SIZE;
+
+        let human = new SimObject(humanId++, `human_${humanId}`);
+        human.transform.position.vx = hx;
+        human.transform.position.vy = hy;
+        // Scale sprite to ~1 tile wide (source is 108x112)
+        let spriteScale = TILE_RENDER_SIZE / 108;
+        human.transform.scale.vx = spriteScale;
+        human.transform.scale.vy = spriteScale;
+
+        // Animated sprite: 8 frames × 2 rows, 108×112 per frame (864×224 sheet)
+        let spriteData = new AnimatedSpriteComponentData();
+        spriteData.name = "humanSprite";
+        spriteData.materialName = "human_mat";
+        spriteData.frameWidth = 108;
+        spriteData.frameHeight = 112;
+        spriteData.frameCount = 16;
+        spriteData.frameSequence = [0];
+        human.addComponent(new AnimatedSpriteComponent(spriteData));
+
+        // Stateful animation behavior
+        let animData = new StatefulAnimationBehaviorData();
+        animData.name = "animState";
+        animData.componentName = "humanSprite";
+        animData.frameTime = 120;
+        animData.states = {
+          "idle": [0],
+          "walk_right": [1, 2, 3, 4, 5, 6, 7, 6, 5, 4, 3, 2],
+          "walk_left": [8, 9, 10, 11, 12, 13, 14, 13, 12, 11, 10, 9],
+        };
+        animData.defaultState = "idle";
+        human.addBehavior(new StatefulAnimationBehavior(animData));
+
+        // Wander behavior
+        let wanderData = new WanderBehaviorData();
+        wanderData.speed = 0.02 + rng.next() * 0.03;
+        wanderData.range = 200 + rng.nextInt(0, 200);
+        human.addBehavior(new WanderBehavior(wanderData));
+
+        this.humanScene.addObject(human);
+      }
+    }
+    this.humanScene.load();
+
+    this.camera.x = MAP_SIZE * TILE_RENDER_SIZE / 2;
+    this.camera.y = MAP_SIZE * TILE_RENDER_SIZE / 2;
   }
 
   update(deltaTime: number): void {
-    let speed = this.camSpeed * deltaTime / this.zoom;
-    if (InputManager.isKeyDown(Keys.W) || InputManager.isKeyDown(Keys.UP)) this.camY -= speed;
-    if (InputManager.isKeyDown(Keys.S) || InputManager.isKeyDown(Keys.DOWN)) this.camY += speed;
-    if (InputManager.isKeyDown(Keys.A) || InputManager.isKeyDown(Keys.LEFT)) this.camX -= speed;
-    if (InputManager.isKeyDown(Keys.D) || InputManager.isKeyDown(Keys.RIGHT)) this.camX += speed;
+    let speed = this.camSpeed * deltaTime / this.camera.zoom;
+    if (InputManager.isKeyDown(Keys.W) || InputManager.isKeyDown(Keys.UP)) this.camera.y -= speed;
+    if (InputManager.isKeyDown(Keys.S) || InputManager.isKeyDown(Keys.DOWN)) this.camera.y += speed;
+    if (InputManager.isKeyDown(Keys.A) || InputManager.isKeyDown(Keys.LEFT)) this.camera.x -= speed;
+    if (InputManager.isKeyDown(Keys.D) || InputManager.isKeyDown(Keys.RIGHT)) this.camera.x += speed;
 
     let wheel = InputManager.consumeWheelDelta();
-    if (wheel !== 0) this.zoom = Math.max(0.005, Math.min(12, this.zoom * (wheel > 0 ? 0.85 : 1.15)));
+    if (wheel !== 0) this.camera.zoom = Math.max(0.005, Math.min(12, this.camera.zoom * (wheel > 0 ? 0.85 : 1.15)));
+
+    // Update humans via engine scene
+    this.humanScene.update(deltaTime);
 
     let ws = MAP_SIZE * TILE_RENDER_SIZE;
-    this.camX = Math.max(0, Math.min(ws, this.camX));
-    this.camY = Math.max(0, Math.min(ws, this.camY));
+    this.camera.x = Math.max(0, Math.min(ws, this.camera.x));
+    this.camera.y = Math.max(0, Math.min(ws, this.camera.y));
 
     let mouse = InputManager.getMousePosition();
     let sw = window.innerWidth, sh = window.innerHeight;
-    let ox = sw / 2 - this.camX * this.zoom, oy = sh / 2 - this.camY * this.zoom;
-    let ts = TILE_RENDER_SIZE * this.zoom;
+    let worldPos = this.camera.screenToWorld(mouse.vx, mouse.vy, sw, sh);
 
-    this.hoverTileX = Math.floor((mouse.vx - ox) / ts);
-    this.hoverTileY = Math.floor((mouse.vy - oy) / ts);
+    this.hoverTileX = Math.floor(worldPos.x / TILE_RENDER_SIZE);
+    this.hoverTileY = Math.floor(worldPos.y / TILE_RENDER_SIZE);
     if (this.hoverTileX < 0 || this.hoverTileX >= MAP_SIZE || this.hoverTileY < 0 || this.hoverTileY >= MAP_SIZE) {
       this.hoverTileX = -1; this.hoverTileY = -1;
     }
 
-    UI.setText(this.coordsText, `Zoom: ${this.zoom.toFixed(2)}x | Seed: ${this.seed}`);
+    UI.setText(this.coordsText, `Zoom: ${this.camera.zoom.toFixed(2)}x | Seed: ${this.seed}`);
 
     if (this.hoverTileX >= 0) {
       let ti = this.tileMap.getTile(this.hoverTileX, this.hoverTileY);
@@ -605,50 +733,41 @@ export class TerrainGame extends Game implements IMessageHandler {
 
   render(shader: Shader): void {
     let sw = window.innerWidth, sh = window.innerHeight;
-    this.tileMap.render(this.camX, this.camY, this.zoom, sw, sh);
-    this.overlayMap.render(this.camX, this.camY, this.zoom, sw, sh);
+    this.tileMap.render(this.camera, sw, sh);
+    this.overlayMap.render(this.camera, sw, sh);
 
-    // Render buildings (1024x512, 8 cols x 4 rows, 128x128 cells, transparent bg)
+    // Render buildings in world space
     let bldMat = MaterialManager.get("buildings_mat");
     if (bldMat && bldMat.diffTexture && bldMat.diffTexture.textureIsLoaded) {
-      let ox = sw / 2 - this.camX * this.zoom;
-      let oy = sh / 2 - this.camY * this.zoom;
-      let ts = TILE_RENDER_SIZE * this.zoom;
-
-      // Each building: 3 tiles wide and tall (square cells)
-      let bSize = ts * 3;
+      let ts = TILE_RENDER_SIZE;
+      let bSize = ts * 3; // 3 tiles wide
 
       for (let b of this.buildings) {
-        let sx = b.tileX * ts + ox;
-        let sy = b.tileY * ts + oy;
-
-        if (sx + bSize < 0 || sx > sw || sy + bSize < 0 || sy > sh) continue;
-
-        SpriteBatcher.drawTexture(bldMat, b.spriteCol, b.spriteRow, 8, 4, sx, sy, bSize, bSize);
+        let wx = b.tileX * ts;
+        let wy = b.tileY * ts;
+        SpriteBatcher.drawTexture(bldMat, b.spriteCol, b.spriteRow, 8, 4, wx, wy, bSize, bSize);
       }
     }
 
-    let ts2 = TILE_RENDER_SIZE * this.zoom;
-    let ox2 = sw / 2 - this.camX * this.zoom, oy2 = sh / 2 - this.camY * this.zoom;
-    let hs = this.tileMap.heightScale * this.zoom;
+    // Render humans
+    this.humanScene.render(shader);
 
+    // Selection highlight in world space
+    let ts = TILE_RENDER_SIZE;
     if (this.selectedTileX >= 0) {
-      let sx = Math.floor(this.selectedTileX * ts2 + ox2);
-      let sy = Math.floor(this.selectedTileY * ts2 + oy2);
-      let sw2 = Math.floor((this.selectedTileX + 1) * ts2 + ox2) - sx;
-      let sh2 = Math.floor((this.selectedTileY + 1) * ts2 + oy2) - sy;
-      Draw.rectOutline(sx, sy, sw2, sh2, new Color(255, 255, 0, 255));
+      let wx = this.selectedTileX * ts;
+      let wy = this.selectedTileY * ts;
+      Draw.rectOutline(wx, wy, ts, ts, new Color(255, 255, 0, 255));
     }
 
-    // Hover highlight
+    // Hover highlight in world space
     if (this.hoverTileX >= 0) {
-      let mouse = InputManager.getMousePosition();
-      let tileScreenX = Math.floor((mouse.vx - ox2) / ts2) * ts2 + ox2;
-      let tileScreenY = Math.floor((mouse.vy - oy2) / ts2) * ts2 + oy2;
-      Draw.rect(tileScreenX, tileScreenY, ts2, 2, Color.white());
-      Draw.rect(tileScreenX, tileScreenY + ts2 - 2, ts2, 2, Color.white());
-      Draw.rect(tileScreenX, tileScreenY, 2, ts2, Color.white());
-      Draw.rect(tileScreenX + ts2 - 2, tileScreenY, 2, ts2, Color.white());
+      let wx = this.hoverTileX * ts;
+      let wy = this.hoverTileY * ts;
+      Draw.rect(wx, wy, ts, 2, Color.white());
+      Draw.rect(wx, wy + ts - 2, ts, 2, Color.white());
+      Draw.rect(wx, wy, 2, ts, Color.white());
+      Draw.rect(wx + ts - 2, wy, 2, ts, Color.white());
     }
   }
 }

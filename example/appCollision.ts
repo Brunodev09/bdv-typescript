@@ -1,12 +1,12 @@
 import { Engine } from '../BdvEngine';
-import { TerrainGame } from './terrainGame';
+import { CollisionGame } from './collisionGame';
 
 let engine: Engine;
 window.onload = () => {
   const canvas: HTMLCanvasElement = document.createElement("canvas");
   canvas.id = "mainFrame";
   document.body.appendChild(canvas);
-  engine = new Engine(canvas, new TerrainGame(), {
+  engine = new Engine(canvas, new CollisionGame(), {
     targetFps: 60,
     showStats: true,
   });

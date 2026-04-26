@@ -715,6 +715,407 @@ _behaviorManager__WEBPACK_IMPORTED_MODULE_2__.BehaviorManager.registerBuilder(ne
 
 /***/ },
 
+/***/ "./BdvEngine/core/behaviors/rayCastBehavior.ts"
+/*!*****************************************************!*\
+  !*** ./BdvEngine/core/behaviors/rayCastBehavior.ts ***!
+  \*****************************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   RayCastBehavior: () => (/* binding */ RayCastBehavior),
+/* harmony export */   RayCastBehaviorBuilder: () => (/* binding */ RayCastBehaviorBuilder),
+/* harmony export */   RayCastBehaviorData: () => (/* binding */ RayCastBehaviorData)
+/* harmony export */ });
+/* harmony import */ var _baseBehavior__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./baseBehavior */ "./BdvEngine/core/behaviors/baseBehavior.ts");
+/* harmony import */ var _behaviorManager__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./behaviorManager */ "./BdvEngine/core/behaviors/behaviorManager.ts");
+/* harmony import */ var _utils_collision__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ../utils/collision */ "./BdvEngine/core/utils/collision.ts");
+/* harmony import */ var _rigidBodyBehavior__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./rigidBodyBehavior */ "./BdvEngine/core/behaviors/rigidBodyBehavior.ts");
+/* harmony import */ var _input_inputManager__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ../input/inputManager */ "./BdvEngine/core/input/inputManager.ts");
+/* harmony import */ var _graphics_draw__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ../graphics/draw */ "./BdvEngine/core/graphics/draw.ts");
+/* harmony import */ var _graphics_color__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ../graphics/color */ "./BdvEngine/core/graphics/color.ts");
+
+
+
+
+
+
+
+class RayCastBehaviorData {
+    constructor() {
+        this.name = 'rayCast';
+        this.color = new _graphics_color__WEBPACK_IMPORTED_MODULE_6__.Color(255, 255, 0, 150);
+        this.hitColor = new _graphics_color__WEBPACK_IMPORTED_MODULE_6__.Color(255, 0, 0, 255);
+        this.hitRadius = 5;
+        this.useMouseTarget = true;
+    }
+    setFromJson(json) {
+        if (json.name !== undefined)
+            this.name = String(json.name);
+    }
+}
+class RayCastBehaviorBuilder {
+    get type() { return "rayCast"; }
+    buildFromJson(json) {
+        let data = new RayCastBehaviorData();
+        data.setFromJson(json);
+        return new RayCastBehavior(data);
+    }
+}
+class RayCastBehavior extends _baseBehavior__WEBPACK_IMPORTED_MODULE_0__.BaseBehavior {
+    constructor(data) {
+        super(data);
+        this.hitX = 0;
+        this.hitY = 0;
+        this.hasHit = false;
+        this.targetX = 0;
+        this.targetY = 0;
+        this.rayColor = data.color;
+        this.hitColor = data.hitColor;
+        this.hitRadius = data.hitRadius;
+    }
+    update(time) {
+        if (!this._owner)
+            return;
+        let pos = this._owner.transform.position;
+        let mouse = _input_inputManager__WEBPACK_IMPORTED_MODULE_4__.InputManager.getMousePosition();
+        let dx = this.targetX - pos.vx;
+        let dy = this.targetY - pos.vy;
+        let len = Math.sqrt(dx * dx + dy * dy);
+        if (len === 0)
+            return;
+        dx /= len;
+        dy /= len;
+        this.hasHit = false;
+        let closestT = Infinity;
+        for (let body of _rigidBodyBehavior__WEBPACK_IMPORTED_MODULE_3__.RigidBodyBehavior.allBodies) {
+            if (body === this._owner.getBehavior("rigidBody"))
+                continue;
+            if (!body.collider)
+                continue;
+            let col = body.collider;
+            let t = -1;
+            if (col.shape === 'rect') {
+                let r = col.getWorldRect();
+                t = _utils_collision__WEBPACK_IMPORTED_MODULE_2__.Collision.rayRect(pos.vx, pos.vy, dx, dy, r.x, r.y, r.w, r.h);
+            }
+            else {
+                let c = col.getWorldCircle();
+                let ox = pos.vx - c.x, oy = pos.vy - c.y;
+                let a = dx * dx + dy * dy;
+                let b2 = ox * dx + oy * dy;
+                let cc = ox * ox + oy * oy - c.r * c.r;
+                let disc = b2 * b2 - a * cc;
+                if (disc >= 0) {
+                    t = (-b2 - Math.sqrt(disc)) / a;
+                    if (t < 0)
+                        t = (-b2 + Math.sqrt(disc)) / a;
+                }
+            }
+            if (t >= 0 && t < closestT) {
+                closestT = t;
+                this.hitX = pos.vx + dx * t;
+                this.hitY = pos.vy + dy * t;
+                this.hasHit = true;
+            }
+        }
+        if (this.hasHit) {
+            _graphics_draw__WEBPACK_IMPORTED_MODULE_5__.Draw.line(pos.vx, pos.vy, this.hitX, this.hitY, this.rayColor);
+            _graphics_draw__WEBPACK_IMPORTED_MODULE_5__.Draw.circle(this.hitX, this.hitY, this.hitRadius, this.hitColor);
+        }
+        else {
+            _graphics_draw__WEBPACK_IMPORTED_MODULE_5__.Draw.line(pos.vx, pos.vy, this.targetX, this.targetY, new _graphics_color__WEBPACK_IMPORTED_MODULE_6__.Color(this.rayColor.r, this.rayColor.g, this.rayColor.b, 50));
+        }
+    }
+}
+_behaviorManager__WEBPACK_IMPORTED_MODULE_1__.BehaviorManager.registerBuilder(new RayCastBehaviorBuilder());
+
+
+/***/ },
+
+/***/ "./BdvEngine/core/behaviors/rigidBodyBehavior.ts"
+/*!*******************************************************!*\
+  !*** ./BdvEngine/core/behaviors/rigidBodyBehavior.ts ***!
+  \*******************************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   RigidBodyBehavior: () => (/* binding */ RigidBodyBehavior),
+/* harmony export */   RigidBodyBehaviorBuilder: () => (/* binding */ RigidBodyBehaviorBuilder),
+/* harmony export */   RigidBodyBehaviorData: () => (/* binding */ RigidBodyBehaviorData)
+/* harmony export */ });
+/* harmony import */ var _baseBehavior__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./baseBehavior */ "./BdvEngine/core/behaviors/baseBehavior.ts");
+/* harmony import */ var _behaviorManager__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./behaviorManager */ "./BdvEngine/core/behaviors/behaviorManager.ts");
+/* harmony import */ var _components_colliderComponent__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ../components/colliderComponent */ "./BdvEngine/core/components/colliderComponent.ts");
+/* harmony import */ var _utils_collision__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ../utils/collision */ "./BdvEngine/core/utils/collision.ts");
+
+
+
+
+class RigidBodyBehaviorData {
+    constructor() {
+        this.name = 'rigidBody';
+        this.vx = 0;
+        this.vy = 0;
+        this.gravity = 0;
+        this.bounceDamping = 0.7;
+        this.friction = 0.99;
+        this.kinematic = false;
+    }
+    setFromJson(json) {
+        if (json.name !== undefined)
+            this.name = String(json.name);
+        if (json.vx !== undefined)
+            this.vx = Number(json.vx);
+        if (json.vy !== undefined)
+            this.vy = Number(json.vy);
+        if (json.gravity !== undefined)
+            this.gravity = Number(json.gravity);
+        if (json.bounceDamping !== undefined)
+            this.bounceDamping = Number(json.bounceDamping);
+        if (json.friction !== undefined)
+            this.friction = Number(json.friction);
+        if (json.kinematic !== undefined)
+            this.kinematic = Boolean(json.kinematic);
+    }
+}
+class RigidBodyBehaviorBuilder {
+    get type() { return "rigidBody"; }
+    buildFromJson(json) {
+        let data = new RigidBodyBehaviorData();
+        data.setFromJson(json);
+        return new RigidBodyBehavior(data);
+    }
+}
+class RigidBodyBehavior extends _baseBehavior__WEBPACK_IMPORTED_MODULE_0__.BaseBehavior {
+    static beginFrame() {
+        RigidBodyBehavior.resolvedPairs.clear();
+    }
+    constructor(data) {
+        super(data);
+        this.collider = null;
+        this.vx = data.vx;
+        this.vy = data.vy;
+        this.gravity = data.gravity;
+        this.bounceDamping = data.bounceDamping;
+        this.friction = data.friction;
+        this.kinematic = data.kinematic;
+    }
+    setOwner(owner) {
+        super.setOwner(owner);
+        RigidBodyBehavior.allBodies.push(this);
+    }
+    static clearAll() {
+        RigidBodyBehavior.allBodies = [];
+    }
+    update(time) {
+        if (!this._owner)
+            return;
+        if (!this.collider) {
+            let comp = this._owner.getComponent("collider");
+            if (comp instanceof _components_colliderComponent__WEBPACK_IMPORTED_MODULE_2__.ColliderComponent) {
+                this.collider = comp;
+            }
+            if (!this.collider)
+                return;
+        }
+        if (this.collider.isStatic)
+            return;
+        let pos = this._owner.transform.position;
+        if (!this.kinematic) {
+            this.vy += this.gravity * time;
+            pos.vx += this.vx * time;
+            pos.vy += this.vy * time;
+        }
+        let myIdx = RigidBodyBehavior.allBodies.indexOf(this);
+        for (let i = 0; i < RigidBodyBehavior.allBodies.length; i++) {
+            let other = RigidBodyBehavior.allBodies[i];
+            if (other === this || !other.collider)
+                continue;
+            if (!other.collider.isStatic && !other.kinematic) {
+                let lo = Math.min(myIdx, i);
+                let hi = Math.max(myIdx, i);
+                let pairKey = `${lo}:${hi}`;
+                if (RigidBodyBehavior.resolvedPairs.has(pairKey))
+                    continue;
+                RigidBodyBehavior.resolvedPairs.add(pairKey);
+            }
+            this.resolveCollision(other);
+        }
+        for (let other of RigidBodyBehavior.allBodies) {
+            if (other === this || !other.collider)
+                continue;
+            if (!other.collider.isStatic)
+                continue;
+            if (this.collider.shape === 'rect' && other.collider.shape === 'rect') {
+                let a = this.collider.getWorldRect();
+                let b = other.collider.getWorldRect();
+                let ov = _utils_collision__WEBPACK_IMPORTED_MODULE_3__.Collision.rectOverlap(a.x, a.y, a.w, a.h, b.x, b.y, b.w, b.h);
+                if (ov) {
+                    pos.vx += ov.x;
+                    pos.vy += ov.y;
+                    if (ov.x !== 0)
+                        this.vx = 0;
+                    if (ov.y !== 0)
+                        this.vy = 0;
+                }
+            }
+        }
+    }
+    wouldOverlapStatic(newX, newY, col) {
+        for (let body of RigidBodyBehavior.allBodies) {
+            if (!body.collider || !body.collider.isStatic)
+                continue;
+            let s = body.collider;
+            if (col.shape === 'rect' && s.shape === 'rect') {
+                let sr = s.getWorldRect();
+                if (_utils_collision__WEBPACK_IMPORTED_MODULE_3__.Collision.rectRect(newX - col.width / 2, newY - col.height / 2, col.width, col.height, sr.x, sr.y, sr.w, sr.h))
+                    return true;
+            }
+            else if (col.shape === 'circle' && s.shape === 'rect') {
+                let sr = s.getWorldRect();
+                if (_utils_collision__WEBPACK_IMPORTED_MODULE_3__.Collision.circleRect(newX, newY, col.radius, sr.x, sr.y, sr.w, sr.h))
+                    return true;
+            }
+        }
+        return false;
+    }
+    resolveCollision(other) {
+        let myCol = this.collider;
+        let otherCol = other.collider;
+        let myPos = this._owner.transform.position;
+        let otherPos = other._owner.transform.position;
+        let isStatic = otherCol.isStatic || other.kinematic;
+        if (myCol.shape === 'rect' && otherCol.shape === 'rect') {
+            let a = myCol.getWorldRect();
+            let b = otherCol.getWorldRect();
+            let overlap = _utils_collision__WEBPACK_IMPORTED_MODULE_3__.Collision.rectOverlap(a.x, a.y, a.w, a.h, b.x, b.y, b.w, b.h);
+            if (overlap) {
+                if (isStatic) {
+                    myPos.vx += overlap.x;
+                    myPos.vy += overlap.y;
+                    if (overlap.x > 0 && this.vx < 0)
+                        this.vx = -this.vx * this.bounceDamping;
+                    else if (overlap.x < 0 && this.vx > 0)
+                        this.vx = -this.vx * this.bounceDamping;
+                    if (overlap.y > 0 && this.vy < 0) {
+                        this.vy = -this.vy * this.bounceDamping;
+                        this.vx *= this.friction;
+                    }
+                    else if (overlap.y < 0 && this.vy > 0) {
+                        this.vy = -this.vy * this.bounceDamping;
+                        this.vx *= this.friction;
+                    }
+                }
+                else {
+                    myPos.vx += overlap.x / 2;
+                    myPos.vy += overlap.y / 2;
+                    otherPos.vx -= overlap.x / 2;
+                    otherPos.vy -= overlap.y / 2;
+                    if (Math.abs(overlap.x) > Math.abs(overlap.y)) {
+                        let t = this.vx;
+                        this.vx = other.vx;
+                        other.vx = t;
+                    }
+                    else {
+                        let t = this.vy;
+                        this.vy = other.vy;
+                        other.vy = t;
+                    }
+                }
+            }
+        }
+        else if (myCol.shape === 'circle' && otherCol.shape === 'circle') {
+            let a = myCol.getWorldCircle();
+            let b = otherCol.getWorldCircle();
+            if (_utils_collision__WEBPACK_IMPORTED_MODULE_3__.Collision.circleCircle(a.x, a.y, a.r, b.x, b.y, b.r)) {
+                let dx = b.x - a.x, dy = b.y - a.y;
+                let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                let nx = dx / dist, ny = dy / dist;
+                let pen = (a.r + b.r) - dist;
+                if (isStatic) {
+                    myPos.vx -= nx * pen;
+                    myPos.vy -= ny * pen;
+                    let dot = this.vx * nx + this.vy * ny;
+                    this.vx -= 2 * dot * nx * this.bounceDamping;
+                    this.vy -= 2 * dot * ny * this.bounceDamping;
+                }
+                else {
+                    myPos.vx -= nx * pen / 2;
+                    myPos.vy -= ny * pen / 2;
+                    otherPos.vx += nx * pen / 2;
+                    otherPos.vy += ny * pen / 2;
+                    let aVn = this.vx * nx + this.vy * ny;
+                    let bVn = other.vx * nx + other.vy * ny;
+                    this.vx += (bVn - aVn) * nx;
+                    this.vy += (bVn - aVn) * ny;
+                    other.vx += (aVn - bVn) * nx;
+                    other.vy += (aVn - bVn) * ny;
+                }
+            }
+        }
+        else if (myCol.shape === 'circle' && otherCol.shape === 'rect') {
+            let c = myCol.getWorldCircle();
+            let r = otherCol.getWorldRect();
+            if (_utils_collision__WEBPACK_IMPORTED_MODULE_3__.Collision.circleRect(c.x, c.y, c.r, r.x, r.y, r.w, r.h)) {
+                let nearestX = Math.max(r.x, Math.min(c.x, r.x + r.w));
+                let nearestY = Math.max(r.y, Math.min(c.y, r.y + r.h));
+                let dx = c.x - nearestX, dy = c.y - nearestY;
+                let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                let nx = dx / dist, ny = dy / dist;
+                let pen = c.r - dist;
+                myPos.vx += nx * pen;
+                myPos.vy += ny * pen;
+                let dot = this.vx * nx + this.vy * ny;
+                let damp = isStatic ? this.bounceDamping : 1.0;
+                this.vx -= 2 * dot * nx * damp;
+                this.vy -= 2 * dot * ny * damp;
+            }
+        }
+        else if (myCol.shape === 'rect' && otherCol.shape === 'circle') {
+            let r = myCol.getWorldRect();
+            let c = otherCol.getWorldCircle();
+            if (_utils_collision__WEBPACK_IMPORTED_MODULE_3__.Collision.circleRect(c.x, c.y, c.r, r.x, r.y, r.w, r.h)) {
+                let nearestX = Math.max(r.x, Math.min(c.x, r.x + r.w));
+                let nearestY = Math.max(r.y, Math.min(c.y, r.y + r.h));
+                let dx = myPos.vx - c.x, dy = myPos.vy - c.y;
+                let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                let nx = dx / dist, ny = dy / dist;
+                let overlap = _utils_collision__WEBPACK_IMPORTED_MODULE_3__.Collision.rectOverlap(r.x, r.y, r.w, r.h, c.x - c.r, c.y - c.r, c.r * 2, c.r * 2);
+                if (overlap) {
+                    myPos.vx += overlap.x;
+                    myPos.vy += overlap.y;
+                    if (isStatic) {
+                        if (overlap.x !== 0)
+                            this.vx = -this.vx * this.bounceDamping;
+                        if (overlap.y !== 0)
+                            this.vy = -this.vy * this.bounceDamping;
+                    }
+                    else {
+                        if (overlap.x !== 0) {
+                            let t = this.vx;
+                            this.vx = other.vx;
+                            other.vx = t;
+                        }
+                        if (overlap.y !== 0) {
+                            let t = this.vy;
+                            this.vy = other.vy;
+                            other.vy = t;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+RigidBodyBehavior.allBodies = [];
+RigidBodyBehavior.resolvedPairs = new Set();
+_behaviorManager__WEBPACK_IMPORTED_MODULE_1__.BehaviorManager.registerBuilder(new RigidBodyBehaviorBuilder());
+
+
+/***/ },
+
 /***/ "./BdvEngine/core/behaviors/rotationBehavior.ts"
 /*!******************************************************!*\
   !*** ./BdvEngine/core/behaviors/rotationBehavior.ts ***!
@@ -768,6 +1169,155 @@ class RotationBehavior extends _baseBehavior__WEBPACK_IMPORTED_MODULE_0__.BaseBe
     }
 }
 _behaviorManager__WEBPACK_IMPORTED_MODULE_2__.BehaviorManager.registerBuilder(new RotationBehaviorBuilder());
+
+
+/***/ },
+
+/***/ "./BdvEngine/core/behaviors/statefulAnimationBehavior.ts"
+/*!***************************************************************!*\
+  !*** ./BdvEngine/core/behaviors/statefulAnimationBehavior.ts ***!
+  \***************************************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   StatefulAnimationBehavior: () => (/* binding */ StatefulAnimationBehavior),
+/* harmony export */   StatefulAnimationBehaviorBuilder: () => (/* binding */ StatefulAnimationBehaviorBuilder),
+/* harmony export */   StatefulAnimationBehaviorData: () => (/* binding */ StatefulAnimationBehaviorData)
+/* harmony export */ });
+/* harmony import */ var _baseBehavior__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./baseBehavior */ "./BdvEngine/core/behaviors/baseBehavior.ts");
+/* harmony import */ var _behaviorManager__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./behaviorManager */ "./BdvEngine/core/behaviors/behaviorManager.ts");
+/* harmony import */ var _components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ../components/animatedSpriteComponent */ "./BdvEngine/core/components/animatedSpriteComponent.ts");
+
+
+
+class StatefulAnimationBehaviorData {
+    constructor() {
+        this.componentName = "";
+        this.states = {};
+        this.defaultState = "";
+        this.frameTime = 100;
+    }
+    setFromJson(json) {
+        if (json.name === undefined)
+            throw new Error("Name must be defined in behavior data.");
+        this.name = String(json.name);
+        if (json.componentName !== undefined)
+            this.componentName = String(json.componentName);
+        if (json.states !== undefined)
+            this.states = json.states;
+        if (json.defaultState !== undefined)
+            this.defaultState = String(json.defaultState);
+        if (json.frameTime !== undefined)
+            this.frameTime = Number(json.frameTime);
+    }
+}
+class StatefulAnimationBehaviorBuilder {
+    get type() { return "statefulAnimation"; }
+    buildFromJson(json) {
+        let data = new StatefulAnimationBehaviorData();
+        data.setFromJson(json);
+        return new StatefulAnimationBehavior(data);
+    }
+}
+class StatefulAnimationBehavior extends _baseBehavior__WEBPACK_IMPORTED_MODULE_0__.BaseBehavior {
+    constructor(data) {
+        super(data);
+        this.states = new Map();
+        this.currentState = "";
+        this.component = null;
+        this.componentName = data.componentName;
+        this.frameTime = data.frameTime;
+        for (let key in data.states) {
+            this.states.set(key, data.states[key]);
+        }
+        if (data.defaultState) {
+            this.currentState = data.defaultState;
+        }
+    }
+    addState(name, frameSequence) {
+        this.states.set(name, frameSequence);
+        if (this.currentState === "")
+            this.currentState = name;
+    }
+    setState(name) {
+        if (name === this.currentState)
+            return;
+        if (!this.states.has(name))
+            return;
+        this.currentState = name;
+        this.resolveComponent();
+        if (this.component) {
+            let seq = this.states.get(name);
+            this.component.sprite.setFrameSequence(seq);
+            this.component.sprite.setFrameTime(this.frameTime);
+        }
+    }
+    getState() {
+        return this.currentState;
+    }
+    update(time) {
+        if (!this.component) {
+            this.resolveComponent();
+            if (this.component && this.currentState) {
+                let seq = this.states.get(this.currentState);
+                if (seq) {
+                    this.component.sprite.setFrameSequence(seq);
+                    this.component.sprite.setFrameTime(this.frameTime);
+                }
+            }
+        }
+    }
+    resolveComponent() {
+        if (this.component || !this._owner)
+            return;
+        let comp = this._owner.getComponent(this.componentName);
+        if (comp && comp instanceof _components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_2__.AnimatedSpriteComponent) {
+            this.component = comp;
+        }
+    }
+}
+_behaviorManager__WEBPACK_IMPORTED_MODULE_1__.BehaviorManager.registerBuilder(new StatefulAnimationBehaviorBuilder());
+
+
+/***/ },
+
+/***/ "./BdvEngine/core/camera2d.ts"
+/*!************************************!*\
+  !*** ./BdvEngine/core/camera2d.ts ***!
+  \************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   Camera2D: () => (/* binding */ Camera2D)
+/* harmony export */ });
+/* harmony import */ var _utils_m4x4__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./utils/m4x4 */ "./BdvEngine/core/utils/m4x4.ts");
+
+class Camera2D {
+    constructor() {
+        this.x = 0;
+        this.y = 0;
+        this.zoom = 1;
+    }
+    getProjection(viewportWidth, viewportHeight) {
+        let halfW = viewportWidth / 2 / this.zoom;
+        let halfH = viewportHeight / 2 / this.zoom;
+        return _utils_m4x4__WEBPACK_IMPORTED_MODULE_0__.m4x4.ortho(this.x - halfW, this.x + halfW, this.y + halfH, this.y - halfH, -100, 100);
+    }
+    screenToWorld(screenX, screenY, viewportWidth, viewportHeight) {
+        return {
+            x: this.x + (screenX - viewportWidth / 2) / this.zoom,
+            y: this.y + (screenY - viewportHeight / 2) / this.zoom,
+        };
+    }
+    worldToScreen(worldX, worldY, viewportWidth, viewportHeight) {
+        return {
+            x: (worldX - this.x) * this.zoom + viewportWidth / 2,
+            y: (worldY - this.y) * this.zoom + viewportHeight / 2,
+        };
+    }
+}
 
 
 /***/ },
@@ -1021,6 +1571,101 @@ class BaseComponent {
 
 /***/ },
 
+/***/ "./BdvEngine/core/components/colliderComponent.ts"
+/*!********************************************************!*\
+  !*** ./BdvEngine/core/components/colliderComponent.ts ***!
+  \********************************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   ColliderComponent: () => (/* binding */ ColliderComponent),
+/* harmony export */   ColliderComponentBuilder: () => (/* binding */ ColliderComponentBuilder),
+/* harmony export */   ColliderComponentData: () => (/* binding */ ColliderComponentData)
+/* harmony export */ });
+/* harmony import */ var _baseComponent__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./baseComponent */ "./BdvEngine/core/components/baseComponent.ts");
+/* harmony import */ var _componentManager__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./componentManager */ "./BdvEngine/core/components/componentManager.ts");
+/* harmony import */ var _graphics_draw__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ../graphics/draw */ "./BdvEngine/core/graphics/draw.ts");
+/* harmony import */ var _graphics_color__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ../graphics/color */ "./BdvEngine/core/graphics/color.ts");
+
+
+
+
+class ColliderComponentData {
+    constructor() {
+        this.name = 'collider';
+        this.shape = 'rect';
+        this.width = 50;
+        this.height = 50;
+        this.radius = 25;
+        this.isStatic = false;
+        this.color = _graphics_color__WEBPACK_IMPORTED_MODULE_3__.Color.white();
+        this.debugDraw = true;
+    }
+    setFromJson(json) {
+        if (json.name !== undefined)
+            this.name = String(json.name);
+        if (json.shape !== undefined)
+            this.shape = json.shape;
+        if (json.width !== undefined)
+            this.width = Number(json.width);
+        if (json.height !== undefined)
+            this.height = Number(json.height);
+        if (json.radius !== undefined)
+            this.radius = Number(json.radius);
+        if (json.isStatic !== undefined)
+            this.isStatic = Boolean(json.isStatic);
+    }
+}
+class ColliderComponentBuilder {
+    get type() { return "collider"; }
+    buildFromJson(json) {
+        let data = new ColliderComponentData();
+        data.setFromJson(json);
+        return new ColliderComponent(data);
+    }
+}
+class ColliderComponent extends _baseComponent__WEBPACK_IMPORTED_MODULE_0__.BaseComponent {
+    constructor(data) {
+        super(data);
+        this.shape = data.shape;
+        this.width = data.width;
+        this.height = data.height;
+        this.radius = data.radius;
+        this.isStatic = data.isStatic;
+        this.color = data.color;
+        this.debugDraw = data.debugDraw;
+    }
+    getWorldRect() {
+        let pos = this.owner.transform.position;
+        return {
+            x: pos.vx - this.width / 2,
+            y: pos.vy - this.height / 2,
+            w: this.width,
+            h: this.height,
+        };
+    }
+    getWorldCircle() {
+        let pos = this.owner.transform.position;
+        return { x: pos.vx, y: pos.vy, r: this.radius };
+    }
+    render(shader) {
+        if (!this.debugDraw)
+            return;
+        let pos = this.owner.transform.position;
+        if (this.shape === 'rect') {
+            _graphics_draw__WEBPACK_IMPORTED_MODULE_2__.Draw.rect(pos.vx - this.width / 2, pos.vy - this.height / 2, this.width, this.height, this.color);
+        }
+        else {
+            _graphics_draw__WEBPACK_IMPORTED_MODULE_2__.Draw.circle(pos.vx, pos.vy, this.radius, this.color);
+        }
+    }
+}
+_componentManager__WEBPACK_IMPORTED_MODULE_1__.ComponentManager.registerBuilder(new ColliderComponentBuilder());
+
+
+/***/ },
+
 /***/ "./BdvEngine/core/components/componentManager.ts"
 /*!*******************************************************!*\
   !*** ./BdvEngine/core/components/componentManager.ts ***!
@@ -1123,14 +1768,18 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _registrations__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./registrations */ "./BdvEngine/core/registrations.ts");
 /* harmony import */ var _gl_gl__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./gl/gl */ "./BdvEngine/core/gl/gl.ts");
-/* harmony import */ var _gl_shaders_defaultShader__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./gl/shaders/defaultShader */ "./BdvEngine/core/gl/shaders/defaultShader.ts");
-/* harmony import */ var _assets_assetManager__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./assets/assetManager */ "./BdvEngine/core/assets/assetManager.ts");
-/* harmony import */ var _input_inputManager__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./input/inputManager */ "./BdvEngine/core/input/inputManager.ts");
-/* harmony import */ var _world_zoneManager__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./world/zoneManager */ "./BdvEngine/core/world/zoneManager.ts");
-/* harmony import */ var _utils_m4x4__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./utils/m4x4 */ "./BdvEngine/core/utils/m4x4.ts");
+/* harmony import */ var _gl_glStats__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./gl/glStats */ "./BdvEngine/core/gl/glStats.ts");
+/* harmony import */ var _gl_shaders_defaultShader__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./gl/shaders/defaultShader */ "./BdvEngine/core/gl/shaders/defaultShader.ts");
+/* harmony import */ var _assets_assetManager__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./assets/assetManager */ "./BdvEngine/core/assets/assetManager.ts");
+/* harmony import */ var _input_inputManager__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./input/inputManager */ "./BdvEngine/core/input/inputManager.ts");
+/* harmony import */ var _world_zoneManager__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./world/zoneManager */ "./BdvEngine/core/world/zoneManager.ts");
 /* harmony import */ var _com_messageBus__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ./com/messageBus */ "./BdvEngine/core/com/messageBus.ts");
 /* harmony import */ var _graphics_draw__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(/*! ./graphics/draw */ "./BdvEngine/core/graphics/draw.ts");
 /* harmony import */ var _graphics_spriteBatcher__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(/*! ./graphics/spriteBatcher */ "./BdvEngine/core/graphics/spriteBatcher.ts");
+/* harmony import */ var _camera2d__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(/*! ./camera2d */ "./BdvEngine/core/camera2d.ts");
+/* harmony import */ var _behaviors_rigidBodyBehavior__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(/*! ./behaviors/rigidBodyBehavior */ "./BdvEngine/core/behaviors/rigidBodyBehavior.ts");
+
+
 
 
 
@@ -1144,21 +1793,26 @@ __webpack_require__.r(__webpack_exports__);
 
 class Engine {
     constructor(canvas, game, config) {
-        var _a, _b;
+        var _a, _b, _c;
         this.previousTime = 0;
+        this.camera = new _camera2d__WEBPACK_IMPORTED_MODULE_10__.Camera2D();
         this.accumulator = 0;
         this.frameCount = 0;
         this.fpsTimer = 0;
         this.currentFps = 0;
-        this.fpsElement = null;
+        this.currentDrawCalls = 0;
+        this.statsElement = null;
         this.canvas = canvas;
         this.game = game;
         this.targetFps = (_a = config === null || config === void 0 ? void 0 : config.targetFps) !== null && _a !== void 0 ? _a : 60;
         this.frameInterval = this.targetFps > 0 ? 1000 / this.targetFps : 0;
-        this.showFps = (_b = config === null || config === void 0 ? void 0 : config.showFps) !== null && _b !== void 0 ? _b : false;
+        this.showStats = (_c = (_b = config === null || config === void 0 ? void 0 : config.showStats) !== null && _b !== void 0 ? _b : config === null || config === void 0 ? void 0 : config.showFps) !== null && _c !== void 0 ? _c : false;
     }
     get fps() {
         return this.currentFps;
+    }
+    get drawCalls() {
+        return this.currentDrawCalls;
     }
     setTargetFps(fps) {
         this.targetFps = fps;
@@ -1166,18 +1820,19 @@ class Engine {
     }
     start() {
         _gl_gl__WEBPACK_IMPORTED_MODULE_1__.GLUTools.init(this.canvas);
-        _assets_assetManager__WEBPACK_IMPORTED_MODULE_3__.AssetManager.init();
-        _input_inputManager__WEBPACK_IMPORTED_MODULE_4__.InputManager.initialize();
-        _world_zoneManager__WEBPACK_IMPORTED_MODULE_5__.ZoneManager.init();
+        _gl_glStats__WEBPACK_IMPORTED_MODULE_2__.GLStats.install();
+        _assets_assetManager__WEBPACK_IMPORTED_MODULE_4__.AssetManager.init();
+        _input_inputManager__WEBPACK_IMPORTED_MODULE_5__.InputManager.initialize();
+        _world_zoneManager__WEBPACK_IMPORTED_MODULE_6__.ZoneManager.init();
         _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.clearColor(0, 0, 0.3, 1);
         _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.enable(_gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.BLEND);
         _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.blendFunc(_gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.SRC_ALPHA, _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.ONE_MINUS_SRC_ALPHA);
-        this.defaultShader = new _gl_shaders_defaultShader__WEBPACK_IMPORTED_MODULE_2__.DefaultShader();
+        this.defaultShader = new _gl_shaders_defaultShader__WEBPACK_IMPORTED_MODULE_3__.DefaultShader();
         this.defaultShader.use();
-        this.projectionMatrix = _utils_m4x4__WEBPACK_IMPORTED_MODULE_6__.m4x4.ortho(0, this.canvas.width, this.canvas.height, 0, -100.0, 100.0);
-        if (this.showFps) {
-            this.createFpsOverlay();
+        if (this.showStats) {
+            this.createStatsOverlay();
         }
+        this.game.camera = this.camera;
         this.game.init();
         this.resize();
         this.previousTime = performance.now();
@@ -1189,8 +1844,7 @@ class Engine {
     resize() {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
-        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.viewport(0, 0, _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.canvas.width, _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.canvas.height);
-        this.projectionMatrix = _utils_m4x4__WEBPACK_IMPORTED_MODULE_6__.m4x4.ortho(0, this.canvas.width, this.canvas.height, 0, -100.0, 100.0);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     }
     tick() {
         let now = performance.now();
@@ -1207,53 +1861,58 @@ class Engine {
             if (this.accumulator > this.frameInterval * 3) {
                 this.accumulator = 0;
             }
-            this.updateFpsCounter(delta);
+            this.updateStats(delta);
             this.update(delta);
             this.render();
         }
         else {
             this.previousTime = now;
-            this.updateFpsCounter(elapsed);
+            this.updateStats(elapsed);
             this.update(elapsed);
             this.render();
         }
         requestAnimationFrame(this.tick.bind(this));
     }
-    updateFpsCounter(delta) {
+    updateStats(delta) {
         this.frameCount++;
         this.fpsTimer += delta;
         if (this.fpsTimer >= 1000) {
             this.currentFps = this.frameCount;
             this.frameCount = 0;
             this.fpsTimer -= 1000;
-            if (this.fpsElement) {
-                this.fpsElement.textContent = `${this.currentFps} FPS`;
+            if (this.statsElement) {
+                this.statsElement.textContent =
+                    `${this.currentFps} FPS | ${this.currentDrawCalls} draw calls`;
             }
         }
     }
     update(delta) {
+        _behaviors_rigidBodyBehavior__WEBPACK_IMPORTED_MODULE_11__.RigidBodyBehavior.beginFrame();
         _com_messageBus__WEBPACK_IMPORTED_MODULE_7__.MessageBus.update(delta);
         this.game.update(delta);
-        _world_zoneManager__WEBPACK_IMPORTED_MODULE_5__.ZoneManager.update(delta);
+        _world_zoneManager__WEBPACK_IMPORTED_MODULE_6__.ZoneManager.update(delta);
     }
     render() {
+        _gl_glStats__WEBPACK_IMPORTED_MODULE_2__.GLStats.reset();
         _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.clear(_gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.COLOR_BUFFER_BIT);
+        let proj = this.camera.getProjection(this.canvas.width, this.canvas.height);
         this.defaultShader.use();
-        let projectionPosition = this.defaultShader.getUniformLocation("u_proj");
-        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.uniformMatrix4fv(projectionPosition, false, new Float32Array(this.projectionMatrix.mData));
-        _graphics_draw__WEBPACK_IMPORTED_MODULE_8__.Draw.setProjection(this.projectionMatrix);
+        let projLoc = this.defaultShader.getUniformLocation("u_proj");
+        _gl_gl__WEBPACK_IMPORTED_MODULE_1__.gl.uniformMatrix4fv(projLoc, false, proj.toFloat32Array());
+        _graphics_draw__WEBPACK_IMPORTED_MODULE_8__.Draw.setProjection(proj);
         this.game.render(this.defaultShader);
-        _world_zoneManager__WEBPACK_IMPORTED_MODULE_5__.ZoneManager.render(this.defaultShader);
+        _world_zoneManager__WEBPACK_IMPORTED_MODULE_6__.ZoneManager.render(this.defaultShader);
         _graphics_spriteBatcher__WEBPACK_IMPORTED_MODULE_9__.SpriteBatcher.flush();
         _graphics_draw__WEBPACK_IMPORTED_MODULE_8__.Draw.flush(this.defaultShader);
+        this.currentDrawCalls = _gl_glStats__WEBPACK_IMPORTED_MODULE_2__.GLStats.drawCalls;
     }
-    createFpsOverlay() {
-        this.fpsElement = document.createElement("div");
-        this.fpsElement.style.cssText =
+    createStatsOverlay() {
+        this.statsElement = document.createElement("div");
+        this.statsElement.style.cssText =
             "position:fixed;top:4px;left:4px;color:#0f0;font:bold 14px monospace;" +
                 "background:rgba(0,0,0,0.6);padding:2px 6px;pointer-events:none;z-index:9999;";
-        this.fpsElement.textContent = "0 FPS";
-        document.body.appendChild(this.fpsElement);
+        this.statsElement.textContent = "0 FPS | 0 draw calls";
+        document.body.appendChild(this.statsElement);
     }
 }
 
@@ -1593,6 +2252,44 @@ class glBuffer {
 
 /***/ },
 
+/***/ "./BdvEngine/core/gl/glStats.ts"
+/*!**************************************!*\
+  !*** ./BdvEngine/core/gl/glStats.ts ***!
+  \**************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   GLStats: () => (/* binding */ GLStats)
+/* harmony export */ });
+/* harmony import */ var _gl__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./gl */ "./BdvEngine/core/gl/gl.ts");
+
+class GLStats {
+    static install() {
+        if (GLStats.installed)
+            return;
+        GLStats.installed = true;
+        let origDrawArrays = _gl__WEBPACK_IMPORTED_MODULE_0__.gl.drawArrays.bind(_gl__WEBPACK_IMPORTED_MODULE_0__.gl);
+        let origDrawElements = _gl__WEBPACK_IMPORTED_MODULE_0__.gl.drawElements.bind(_gl__WEBPACK_IMPORTED_MODULE_0__.gl);
+        _gl__WEBPACK_IMPORTED_MODULE_0__.gl.drawArrays = function (mode, first, count) {
+            GLStats.drawCalls++;
+            origDrawArrays(mode, first, count);
+        };
+        _gl__WEBPACK_IMPORTED_MODULE_0__.gl.drawElements = function (mode, count, type, offset) {
+            GLStats.drawCalls++;
+            origDrawElements(mode, count, type, offset);
+        };
+    }
+    static reset() {
+        GLStats.drawCalls = 0;
+    }
+}
+GLStats.drawCalls = 0;
+GLStats.installed = false;
+
+
+/***/ },
+
 /***/ "./BdvEngine/core/gl/shader.ts"
 /*!*************************************!*\
   !*** ./BdvEngine/core/gl/shader.ts ***!
@@ -1726,6 +2423,88 @@ class DefaultShader extends _shader__WEBPACK_IMPORTED_MODULE_0__.Shader {
 
 /***/ },
 
+/***/ "./BdvEngine/core/graphics/animatedEntity.ts"
+/*!***************************************************!*\
+  !*** ./BdvEngine/core/graphics/animatedEntity.ts ***!
+  \***************************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   AnimatedEntity: () => (/* binding */ AnimatedEntity)
+/* harmony export */ });
+/* harmony import */ var _spriteBatcher__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./spriteBatcher */ "./BdvEngine/core/graphics/spriteBatcher.ts");
+
+class AnimatedEntity {
+    constructor(materialName, gridCols, gridRows, frameWidth = 0, frameHeight = 0) {
+        this.states = new Map();
+        this.currentState = "";
+        this.currentFrame = 0;
+        this.frameTime = 100;
+        this.elapsed = 0;
+        this.playing = true;
+        this.materialName = materialName;
+        this.gridCols = gridCols;
+        this.gridRows = gridRows;
+        this.frameWidth = frameWidth;
+        this.frameHeight = frameHeight;
+    }
+    addState(name, row, startFrame, endFrame) {
+        this.states.set(name, { row, startFrame, endFrame });
+        if (this.currentState === "") {
+            this.currentState = name;
+            this.currentFrame = startFrame;
+        }
+    }
+    setState(name) {
+        if (name === this.currentState)
+            return;
+        let state = this.states.get(name);
+        if (!state)
+            return;
+        this.currentState = name;
+        this.currentFrame = state.startFrame;
+        this.elapsed = 0;
+    }
+    getState() {
+        return this.currentState;
+    }
+    setFrameTime(ms) {
+        this.frameTime = ms;
+    }
+    setPaused(paused) {
+        this.playing = !paused;
+    }
+    update(deltaTime) {
+        if (!this.playing)
+            return;
+        let state = this.states.get(this.currentState);
+        if (!state)
+            return;
+        if (state.startFrame === state.endFrame) {
+            this.currentFrame = state.startFrame;
+            return;
+        }
+        this.elapsed += deltaTime;
+        if (this.elapsed >= this.frameTime) {
+            this.elapsed -= this.frameTime;
+            this.currentFrame++;
+            if (this.currentFrame > state.endFrame) {
+                this.currentFrame = state.startFrame;
+            }
+        }
+    }
+    render(material, x, y, width, height, tint) {
+        let state = this.states.get(this.currentState);
+        if (!state)
+            return;
+        _spriteBatcher__WEBPACK_IMPORTED_MODULE_0__.SpriteBatcher.drawTexture(material, this.currentFrame, state.row, this.gridCols, this.gridRows, x, y, width, height, tint);
+    }
+}
+
+
+/***/ },
+
 /***/ "./BdvEngine/core/graphics/animatedSprite.ts"
 /*!***************************************************!*\
   !*** ./BdvEngine/core/graphics/animatedSprite.ts ***!
@@ -1786,6 +2565,20 @@ class AnimatedSprite extends _sprite__WEBPACK_IMPORTED_MODULE_0__.Sprite {
             this.calculateUVs();
         }
     }
+    setFrameSequence(sequence) {
+        if (this._frameSequence.length === sequence.length &&
+            this._frameSequence.every((v, i) => v === sequence[i]))
+            return;
+        this._frameSequence = sequence;
+        this._currentFrame = 0;
+        this._currentTime = 0;
+    }
+    setFrameTime(ms) {
+        this._frameTime = ms;
+    }
+    get frameSequence() {
+        return this._frameSequence;
+    }
     load() {
         super.load();
     }
@@ -1817,22 +2610,15 @@ class AnimatedSprite extends _sprite__WEBPACK_IMPORTED_MODULE_0__.Sprite {
         super.update(time);
     }
     calculateUVs() {
-        let totalWidth = 0;
-        let yValue = 0;
+        let colsPerRow = Math.floor(this._assetWidth / this._frameWidth);
         for (let i = 0; i < this._frameCount; ++i) {
-            totalWidth += this._frameWidth;
-            if (totalWidth > this._assetWidth) {
-                yValue++;
-                totalWidth = 0;
-            }
-            console.log("w/h", this._assetWidth, this._assetHeight);
-            let u = (i * this._frameWidth) / this._assetWidth;
-            let v = (yValue * this._frameHeight) / this._assetHeight;
-            let min = new _utils_vec2__WEBPACK_IMPORTED_MODULE_3__.vec2(u, v);
-            let uMax = (i * this._frameWidth + this._frameWidth) / this._assetWidth;
-            let vMax = (yValue * this._frameHeight + this._frameHeight) / this._assetHeight;
-            let max = new _utils_vec2__WEBPACK_IMPORTED_MODULE_3__.vec2(uMax, vMax);
-            this._frameUVs.push(new UVInfo(min, max));
+            let col = i % colsPerRow;
+            let row = Math.floor(i / colsPerRow);
+            let u = (col * this._frameWidth) / this._assetWidth;
+            let v = (row * this._frameHeight) / this._assetHeight;
+            let uMax = ((col + 1) * this._frameWidth) / this._assetWidth;
+            let vMax = ((row + 1) * this._frameHeight) / this._assetHeight;
+            this._frameUVs.push(new UVInfo(new _utils_vec2__WEBPACK_IMPORTED_MODULE_3__.vec2(u, v), new _utils_vec2__WEBPACK_IMPORTED_MODULE_3__.vec2(uMax, vMax)));
         }
     }
 }
@@ -1962,17 +2748,92 @@ class Draw {
         Draw.lineBuf = _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.createBuffer();
         Draw.batchShader = new BatchColorShader();
     }
-    static pushVert(buf, x, y, z, c) {
-        buf.push(x, y, z, c.rFloat, c.gFloat, c.bFloat, c.aFloat);
+    static grow(arr, needed) {
+        if (needed <= arr.length)
+            return arr;
+        let newSize = arr.length;
+        while (newSize < needed)
+            newSize *= 2;
+        let newArr = new Float32Array(newSize);
+        newArr.set(arr);
+        return newArr;
+    }
+    static pushTriVert(x, y, z, r, g, b, a) {
+        let i = Draw.triCount;
+        Draw.triData = Draw.grow(Draw.triData, i + 7);
+        let d = Draw.triData;
+        d[i] = x;
+        d[i + 1] = y;
+        d[i + 2] = z;
+        d[i + 3] = r;
+        d[i + 4] = g;
+        d[i + 5] = b;
+        d[i + 6] = a;
+        Draw.triCount = i + 7;
+    }
+    static pushLineVert(x, y, z, r, g, b, a) {
+        let i = Draw.lineCount;
+        Draw.lineData = Draw.grow(Draw.lineData, i + 7);
+        let d = Draw.lineData;
+        d[i] = x;
+        d[i + 1] = y;
+        d[i + 2] = z;
+        d[i + 3] = r;
+        d[i + 4] = g;
+        d[i + 5] = b;
+        d[i + 6] = a;
+        Draw.lineCount = i + 7;
     }
     static rect(x, y, w, h, color) {
-        let b = Draw.triVerts, c = color;
-        Draw.pushVert(b, x, y, 0, c);
-        Draw.pushVert(b, x, y + h, 0, c);
-        Draw.pushVert(b, x + w, y + h, 0, c);
-        Draw.pushVert(b, x + w, y + h, 0, c);
-        Draw.pushVert(b, x + w, y, 0, c);
-        Draw.pushVert(b, x, y, 0, c);
+        let r = color.rFloat, g = color.gFloat, b = color.bFloat, a = color.aFloat;
+        let x2 = x + w, y2 = y + h;
+        let needed = Draw.triCount + 42;
+        Draw.triData = Draw.grow(Draw.triData, needed);
+        let d = Draw.triData;
+        let i = Draw.triCount;
+        d[i] = x;
+        d[i + 1] = y;
+        d[i + 2] = 0;
+        d[i + 3] = r;
+        d[i + 4] = g;
+        d[i + 5] = b;
+        d[i + 6] = a;
+        d[i + 7] = x;
+        d[i + 8] = y2;
+        d[i + 9] = 0;
+        d[i + 10] = r;
+        d[i + 11] = g;
+        d[i + 12] = b;
+        d[i + 13] = a;
+        d[i + 14] = x2;
+        d[i + 15] = y2;
+        d[i + 16] = 0;
+        d[i + 17] = r;
+        d[i + 18] = g;
+        d[i + 19] = b;
+        d[i + 20] = a;
+        d[i + 21] = x2;
+        d[i + 22] = y2;
+        d[i + 23] = 0;
+        d[i + 24] = r;
+        d[i + 25] = g;
+        d[i + 26] = b;
+        d[i + 27] = a;
+        d[i + 28] = x2;
+        d[i + 29] = y;
+        d[i + 30] = 0;
+        d[i + 31] = r;
+        d[i + 32] = g;
+        d[i + 33] = b;
+        d[i + 34] = a;
+        d[i + 35] = x;
+        d[i + 36] = y;
+        d[i + 37] = 0;
+        d[i + 38] = r;
+        d[i + 39] = g;
+        d[i + 40] = b;
+        d[i + 41] = a;
+        Draw.triCount = i + 42;
     }
     static rectOutline(x, y, w, h, color) {
         Draw.line(x, y, x + w, y, color);
@@ -1981,14 +2842,40 @@ class Draw {
         Draw.line(x, y + h, x, y, color);
     }
     static circle(cx, cy, radius, color, segments = 32) {
-        let b = Draw.triVerts;
+        let r = color.rFloat, g = color.gFloat, b = color.bFloat, a = color.aFloat;
+        let needed = Draw.triCount + segments * 21;
+        Draw.triData = Draw.grow(Draw.triData, needed);
+        let d = Draw.triData;
+        let idx = Draw.triCount;
         for (let i = 0; i < segments; i++) {
             let a0 = (i / segments) * Math.PI * 2;
             let a1 = ((i + 1) / segments) * Math.PI * 2;
-            Draw.pushVert(b, cx, cy, 0, color);
-            Draw.pushVert(b, cx + Math.cos(a0) * radius, cy + Math.sin(a0) * radius, 0, color);
-            Draw.pushVert(b, cx + Math.cos(a1) * radius, cy + Math.sin(a1) * radius, 0, color);
+            let cos0 = Math.cos(a0), sin0 = Math.sin(a0);
+            let cos1 = Math.cos(a1), sin1 = Math.sin(a1);
+            d[idx] = cx;
+            d[idx + 1] = cy;
+            d[idx + 2] = 0;
+            d[idx + 3] = r;
+            d[idx + 4] = g;
+            d[idx + 5] = b;
+            d[idx + 6] = a;
+            d[idx + 7] = cx + cos0 * radius;
+            d[idx + 8] = cy + sin0 * radius;
+            d[idx + 9] = 0;
+            d[idx + 10] = r;
+            d[idx + 11] = g;
+            d[idx + 12] = b;
+            d[idx + 13] = a;
+            d[idx + 14] = cx + cos1 * radius;
+            d[idx + 15] = cy + sin1 * radius;
+            d[idx + 16] = 0;
+            d[idx + 17] = r;
+            d[idx + 18] = g;
+            d[idx + 19] = b;
+            d[idx + 20] = a;
+            idx += 21;
         }
+        Draw.triCount = idx;
     }
     static circleOutline(cx, cy, radius, color, segments = 32) {
         for (let i = 0; i < segments; i++) {
@@ -1998,10 +2885,10 @@ class Draw {
         }
     }
     static triangle(x1, y1, x2, y2, x3, y3, color) {
-        let b = Draw.triVerts;
-        Draw.pushVert(b, x1, y1, 0, color);
-        Draw.pushVert(b, x2, y2, 0, color);
-        Draw.pushVert(b, x3, y3, 0, color);
+        let r = color.rFloat, g = color.gFloat, b = color.bFloat, a = color.aFloat;
+        Draw.pushTriVert(x1, y1, 0, r, g, b, a);
+        Draw.pushTriVert(x2, y2, 0, r, g, b, a);
+        Draw.pushTriVert(x3, y3, 0, r, g, b, a);
     }
     static triangleOutline(x1, y1, x2, y2, x3, y3, color) {
         Draw.line(x1, y1, x2, y2, color);
@@ -2013,9 +2900,26 @@ class Draw {
         Draw.rect(x - h, y - h, size, size, color);
     }
     static line(x1, y1, x2, y2, color) {
-        let b = Draw.lineVerts;
-        Draw.pushVert(b, x1, y1, 0, color);
-        Draw.pushVert(b, x2, y2, 0, color);
+        let r = color.rFloat, g = color.gFloat, b = color.bFloat, a = color.aFloat;
+        let needed = Draw.lineCount + 14;
+        Draw.lineData = Draw.grow(Draw.lineData, needed);
+        let d = Draw.lineData;
+        let i = Draw.lineCount;
+        d[i] = x1;
+        d[i + 1] = y1;
+        d[i + 2] = 0;
+        d[i + 3] = r;
+        d[i + 4] = g;
+        d[i + 5] = b;
+        d[i + 6] = a;
+        d[i + 7] = x2;
+        d[i + 8] = y2;
+        d[i + 9] = 0;
+        d[i + 10] = r;
+        d[i + 11] = g;
+        d[i + 12] = b;
+        d[i + 13] = a;
+        Draw.lineCount = i + 14;
     }
     static ray(ox, oy, dirX, dirY, length, color) {
         let mag = Math.sqrt(dirX * dirX + dirY * dirY);
@@ -2038,26 +2942,26 @@ class Draw {
         }
     }
     static flush(parentShader) {
-        if (Draw.triVerts.length === 0 && Draw.lineVerts.length === 0)
+        if (Draw.triCount === 0 && Draw.lineCount === 0)
             return;
         Draw.ensureInit();
         let shader = Draw.batchShader;
         shader.use();
         let projLoc = shader.getUniformLocation("u_proj");
         _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix4fv(projLoc, false, new Float32Array(Draw.projectionMatrix.mData));
-        if (Draw.triVerts.length > 0) {
-            Draw.submitBatch(shader, Draw.triBuf, Draw.triVerts, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TRIANGLES);
-            Draw.triVerts.length = 0;
+        if (Draw.triCount > 0) {
+            Draw.submitBatch(shader, Draw.triBuf, Draw.triData, Draw.triCount, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TRIANGLES);
+            Draw.triCount = 0;
         }
-        if (Draw.lineVerts.length > 0) {
-            Draw.submitBatch(shader, Draw.lineBuf, Draw.lineVerts, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.LINES);
-            Draw.lineVerts.length = 0;
+        if (Draw.lineCount > 0) {
+            Draw.submitBatch(shader, Draw.lineBuf, Draw.lineData, Draw.lineCount, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.LINES);
+            Draw.lineCount = 0;
         }
         parentShader.use();
     }
-    static submitBatch(shader, buffer, verts, mode) {
+    static submitBatch(shader, buffer, data, floatCount, mode) {
         _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bindBuffer(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ARRAY_BUFFER, buffer);
-        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bufferData(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ARRAY_BUFFER, new Float32Array(verts), _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.DYNAMIC_DRAW);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bufferData(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ARRAY_BUFFER, data.subarray(0, floatCount), _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.DYNAMIC_DRAW);
         const stride = 7 * 4;
         let posLoc = shader.getAttribLocation("a_pos");
         _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.vertexAttribPointer(posLoc, 3, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.FLOAT, false, stride, 0);
@@ -2065,13 +2969,16 @@ class Draw {
         let colLoc = shader.getAttribLocation("a_color");
         _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.vertexAttribPointer(colLoc, 4, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.FLOAT, false, stride, 3 * 4);
         _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.enableVertexAttribArray(colLoc);
-        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.drawArrays(mode, 0, verts.length / 7);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.drawArrays(mode, 0, floatCount / 7);
         _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.disableVertexAttribArray(posLoc);
         _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.disableVertexAttribArray(colLoc);
     }
 }
-Draw.triVerts = [];
-Draw.lineVerts = [];
+Draw.FLOATS_PER_VERT = 7;
+Draw.triData = new Float32Array(7 * 6 * 1024);
+Draw.triCount = 0;
+Draw.lineData = new Float32Array(7 * 2 * 512);
+Draw.lineCount = 0;
 Draw.whiteTexture = null;
 Draw.triBuf = null;
 Draw.lineBuf = null;
@@ -2944,35 +3851,35 @@ class TileMap {
     get width() { return this.mapWidth; }
     get height() { return this.mapHeight; }
     get tileSize() { return this.renderTileSize; }
-    render(camX, camY, zoom, screenW, screenH) {
+    render(camera, screenW, screenH) {
         if (!this.tileSet.computeUVs())
             return;
-        let ts = this.renderTileSize * zoom;
-        let useLod = this.lodTileSet && ts < this.lodThreshold;
+        let ts = this.renderTileSize;
+        let zoom = camera.zoom;
+        let screenTs = ts * zoom;
+        let useLod = this.lodTileSet && screenTs < this.lodThreshold;
         let activeTileSet = useLod ? this.lodTileSet : this.tileSet;
         if (useLod && !activeTileSet.computeUVs()) {
             activeTileSet = this.tileSet;
         }
-        let hs = this.heightScale * zoom;
         let step = 1;
-        if (ts < 4)
+        if (screenTs < 4)
             step = 8;
-        else if (ts < 6)
+        else if (screenTs < 6)
             step = 4;
-        else if (ts < 10)
+        else if (screenTs < 10)
             step = 2;
-        let effectiveTs = ts * step;
-        let halfW = screenW / 2 / effectiveTs;
-        let halfH = screenH / 2 / effectiveTs;
-        let camTX = camX / (this.renderTileSize * step);
-        let camTY = camY / (this.renderTileSize * step);
-        let margin = (hs > 0) ? Math.ceil(hs * 1.5 / effectiveTs) + 2 : 2;
-        let startX = Math.max(0, Math.floor((camTX - halfW) - 1) * step);
-        let startY = Math.max(0, Math.floor((camTY - halfH) - margin) * step);
-        let endX = Math.min(this.mapWidth, Math.ceil((camTX + halfW) + 1) * step);
-        let endY = Math.min(this.mapHeight, Math.ceil((camTY + halfH) + 2) * step);
-        let offsetX = screenW / 2 - camX * zoom;
-        let offsetY = screenH / 2 - camY * zoom;
+        let halfW = screenW / 2 / zoom;
+        let halfH = screenH / 2 / zoom;
+        let camTX = camera.x / ts;
+        let camTY = camera.y / ts;
+        let margin = 2;
+        let startX = Math.max(0, Math.floor(camTX - halfW / ts) - 1);
+        let startY = Math.max(0, Math.floor(camTY - halfH / ts) - margin);
+        let endX = Math.min(this.mapWidth, Math.ceil(camTX + halfW / ts) + 1);
+        let endY = Math.min(this.mapHeight, Math.ceil(camTY + halfH / ts) + 2);
+        startX = Math.floor(startX / step) * step;
+        startY = Math.floor(startY / step) * step;
         let mat = activeTileSet.material;
         let baseR = mat.diffColor.rFloat;
         let baseG = mat.diffColor.gFloat;
@@ -2982,18 +3889,17 @@ class TileMap {
         if (!texture)
             return;
         let key = "__default_batch__:" + mat.diffTextureName;
-        let batch = _spriteBatcher__WEBPACK_IMPORTED_MODULE_2__.SpriteBatcher.batches;
-        if (!batch) {
+        let batches = _spriteBatcher__WEBPACK_IMPORTED_MODULE_2__.SpriteBatcher.batches;
+        if (!batches) {
             _spriteBatcher__WEBPACK_IMPORTED_MODULE_2__.SpriteBatcher.ensureInit();
-            batch = _spriteBatcher__WEBPACK_IMPORTED_MODULE_2__.SpriteBatcher.batches;
+            batches = _spriteBatcher__WEBPACK_IMPORTED_MODULE_2__.SpriteBatcher.batches;
         }
-        let batchEntry = batch.get(key);
+        let batchEntry = batches.get(key);
         if (!batchEntry) {
             batchEntry = { verts: [], texture: texture, material: null };
-            batch.set(key, batchEntry);
+            batches.set(key, batchEntry);
         }
         let buf = batchEntry.verts;
-        let enable3d = ts >= 3;
         let hasImportant = this.importantTiles.size > 0 && step > 1;
         let showImportant = hasImportant && step <= 2;
         let iterStep = showImportant ? 1 : step;
@@ -3015,43 +3921,13 @@ class TileMap {
                 let uv = activeTileSet.getUV(tileIdx);
                 if (!uv)
                     continue;
-                let h = this.heights[y * this.mapWidth + x];
-                let yOffset = enable3d ? -h * hs : 0;
-                let hSouth = (y + 1 < this.mapHeight) ? this.heights[(y + 1) * this.mapWidth + x] : h;
-                let hNorth = (y - 1 >= 0) ? this.heights[(y - 1) * this.mapWidth + x] : h;
-                let hEast = (x + 1 < this.mapWidth) ? this.heights[y * this.mapWidth + x + 1] : h;
-                let hWest = (x - 1 >= 0) ? this.heights[y * this.mapWidth + x - 1] : h;
-                let avgNeighbor = (hSouth + hNorth + hEast + hWest) / 4;
-                let ao = Math.max(0, (avgNeighbor - h) * this.shadowStrength * 0.5);
-                let slopeS = Math.max(0, h - hSouth);
-                let slopeE = Math.max(0, h - hEast);
-                let light = 1.0 - Math.min(0.3, (slopeS + slopeE) * 0.1) - ao;
-                let slopeN = Math.max(0, h - hNorth);
-                light += slopeN * 0.08;
-                light = Math.max(0.5, Math.min(1.15, light));
-                let r = baseR * light;
-                let g = baseG * light;
-                let b = baseB * light;
-                let isImportant = this.importantTiles.has(tileIdx);
-                let tileStep = (onGrid && !isImportant) ? step : 1;
-                let sx = Math.floor(x * ts + offsetX);
-                let sy = Math.floor(y * ts + offsetY + yOffset);
-                let sx2 = Math.floor((x + tileStep) * ts + offsetX) + 1;
-                let sy2 = Math.floor((y + tileStep) * ts + offsetY + yOffset) + 1;
-                buf.push(sx, sy, 0, uv.u0, uv.v0, r, g, b, baseA, sx, sy2, 0, uv.u0, uv.v1, r, g, b, baseA, sx2, sy2, 0, uv.u1, uv.v1, r, g, b, baseA, sx2, sy2, 0, uv.u1, uv.v1, r, g, b, baseA, sx2, sy, 0, uv.u1, uv.v0, r, g, b, baseA, sx, sy, 0, uv.u0, uv.v0, r, g, b, baseA);
-                if (!enable3d)
-                    continue;
-                let dropS = (h - hSouth) * hs;
-                if (dropS > 2) {
-                    let cliffBottom = sy2 + Math.round(dropS);
-                    let cr = r * 0.6;
-                    let cg = g * 0.6;
-                    let cb = b * 0.6;
-                    let crBot = r * 0.4;
-                    let cgBot = g * 0.4;
-                    let cbBot = b * 0.4;
-                    buf.push(sx, sy2, 0, uv.u0, uv.v1, cr, cg, cb, baseA, sx, cliffBottom, 0, uv.u0, uv.v1, crBot, cgBot, cbBot, baseA, sx2, cliffBottom, 0, uv.u1, uv.v1, crBot, cgBot, cbBot, baseA, sx2, cliffBottom, 0, uv.u1, uv.v1, crBot, cgBot, cbBot, baseA, sx2, sy2, 0, uv.u1, uv.v1, cr, cg, cb, baseA, sx, sy2, 0, uv.u0, uv.v1, cr, cg, cb, baseA);
-                }
+                let r = baseR, g = baseG, b = baseB;
+                let tileStep = (onGrid && !isImportantTile) ? step : 1;
+                let wx = x * ts;
+                let wy = y * ts;
+                let wx2 = (x + tileStep) * ts;
+                let wy2 = (y + tileStep) * ts;
+                buf.push(wx, wy, 0, uv.u0, uv.v0, r, g, b, baseA, wx, wy2, 0, uv.u0, uv.v1, r, g, b, baseA, wx2, wy2, 0, uv.u1, uv.v1, r, g, b, baseA, wx2, wy2, 0, uv.u1, uv.v1, r, g, b, baseA, wx2, wy, 0, uv.u1, uv.v0, r, g, b, baseA, wx, wy, 0, uv.u0, uv.v0, r, g, b, baseA);
             }
         }
     }
@@ -3227,6 +4103,14 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./components/animatedSpriteComponent */ "./BdvEngine/core/components/animatedSpriteComponent.ts");
 /* harmony import */ var _behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./behaviors/keyboardMovementBehavior */ "./BdvEngine/core/behaviors/keyboardMovementBehavior.ts");
 /* harmony import */ var _behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./behaviors/rotationBehavior */ "./BdvEngine/core/behaviors/rotationBehavior.ts");
+/* harmony import */ var _behaviors_statefulAnimationBehavior__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./behaviors/statefulAnimationBehavior */ "./BdvEngine/core/behaviors/statefulAnimationBehavior.ts");
+/* harmony import */ var _behaviors_rigidBodyBehavior__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./behaviors/rigidBodyBehavior */ "./BdvEngine/core/behaviors/rigidBodyBehavior.ts");
+/* harmony import */ var _behaviors_rayCastBehavior__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./behaviors/rayCastBehavior */ "./BdvEngine/core/behaviors/rayCastBehavior.ts");
+/* harmony import */ var _components_colliderComponent__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ./components/colliderComponent */ "./BdvEngine/core/components/colliderComponent.ts");
+
+
+
+
 
 
 
@@ -3443,6 +4327,104 @@ class UI {
     }
 }
 UI.root = null;
+
+
+/***/ },
+
+/***/ "./BdvEngine/core/utils/collision.ts"
+/*!*******************************************!*\
+  !*** ./BdvEngine/core/utils/collision.ts ***!
+  \*******************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   Collision: () => (/* binding */ Collision)
+/* harmony export */ });
+class Collision {
+    static rectRect(ax, ay, aw, ah, bx, by, bw, bh) {
+        return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+    }
+    static circleCircle(ax, ay, ar, bx, by, br) {
+        let dx = ax - bx, dy = ay - by;
+        let dist = dx * dx + dy * dy;
+        let radSum = ar + br;
+        return dist < radSum * radSum;
+    }
+    static pointRect(px, py, rx, ry, rw, rh) {
+        return px >= rx && px <= rx + rw && py >= ry && py <= ry + rh;
+    }
+    static pointCircle(px, py, cx, cy, cr) {
+        let dx = px - cx, dy = py - cy;
+        return dx * dx + dy * dy < cr * cr;
+    }
+    static circleRect(cx, cy, cr, rx, ry, rw, rh) {
+        let nearestX = Math.max(rx, Math.min(cx, rx + rw));
+        let nearestY = Math.max(ry, Math.min(cy, ry + rh));
+        let dx = cx - nearestX, dy = cy - nearestY;
+        return dx * dx + dy * dy < cr * cr;
+    }
+    static lineRect(x1, y1, x2, y2, rx, ry, rw, rh) {
+        if (Collision.pointRect(x1, y1, rx, ry, rw, rh))
+            return true;
+        if (Collision.pointRect(x2, y2, rx, ry, rw, rh))
+            return true;
+        if (Collision.lineLine(x1, y1, x2, y2, rx, ry, rx + rw, ry))
+            return true;
+        if (Collision.lineLine(x1, y1, x2, y2, rx + rw, ry, rx + rw, ry + rh))
+            return true;
+        if (Collision.lineLine(x1, y1, x2, y2, rx, ry + rh, rx + rw, ry + rh))
+            return true;
+        if (Collision.lineLine(x1, y1, x2, y2, rx, ry, rx, ry + rh))
+            return true;
+        return false;
+    }
+    static lineLine(x1, y1, x2, y2, x3, y3, x4, y4) {
+        let denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+        if (denom === 0)
+            return false;
+        let ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
+        let ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
+        return ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1;
+    }
+    static rectOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+        let overlapX = Math.min(ax + aw - bx, bx + bw - ax);
+        let overlapY = Math.min(ay + ah - by, by + bh - ay);
+        if (overlapX <= 0 || overlapY <= 0)
+            return null;
+        if (overlapX < overlapY) {
+            return { x: (ax + aw / 2 < bx + bw / 2) ? -overlapX : overlapX, y: 0 };
+        }
+        else {
+            return { x: 0, y: (ay + ah / 2 < by + bh / 2) ? -overlapY : overlapY };
+        }
+    }
+    static rayRect(originX, originY, dirX, dirY, rx, ry, rw, rh) {
+        let tmin = -Infinity, tmax = Infinity;
+        if (dirX !== 0) {
+            let t1 = (rx - originX) / dirX;
+            let t2 = (rx + rw - originX) / dirX;
+            tmin = Math.max(tmin, Math.min(t1, t2));
+            tmax = Math.min(tmax, Math.max(t1, t2));
+        }
+        else if (originX < rx || originX > rx + rw) {
+            return -1;
+        }
+        if (dirY !== 0) {
+            let t1 = (ry - originY) / dirY;
+            let t2 = (ry + rh - originY) / dirY;
+            tmin = Math.max(tmin, Math.min(t1, t2));
+            tmax = Math.min(tmax, Math.max(t1, t2));
+        }
+        else if (originY < ry || originY > ry + rh) {
+            return -1;
+        }
+        if (tmax >= tmin && tmax >= 0) {
+            return tmin >= 0 ? tmin : tmax;
+        }
+        return -1;
+    }
+}
 
 
 /***/ },
@@ -3974,6 +4956,12 @@ class SimObject {
         }
         return undefined;
     }
+    getComponent(name) {
+        return this.components.find(c => c.name === name);
+    }
+    getBehavior(name) {
+        return this.behaviors.find(b => b.name === name);
+    }
     addComponent(component) {
         this.components.push(component);
         component.setOwner(this);
@@ -4235,114 +5223,146 @@ ZoneManager.registeredZones = {};
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   AnimatedSprite: () => (/* reexport safe */ _core_graphics_animatedSprite__WEBPACK_IMPORTED_MODULE_16__.AnimatedSprite),
-/* harmony export */   AnimatedSpriteComponent: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_40__.AnimatedSpriteComponent),
-/* harmony export */   AnimatedSpriteComponentBuilder: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_40__.AnimatedSpriteComponentBuilder),
-/* harmony export */   AnimatedSpriteComponentData: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_40__.AnimatedSpriteComponentData),
-/* harmony export */   AssetManager: () => (/* reexport safe */ _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_32__.AssetManager),
-/* harmony export */   BaseBehavior: () => (/* reexport safe */ _core_behaviors_baseBehavior__WEBPACK_IMPORTED_MODULE_41__.BaseBehavior),
-/* harmony export */   BaseComponent: () => (/* reexport safe */ _core_components_baseComponent__WEBPACK_IMPORTED_MODULE_37__.BaseComponent),
-/* harmony export */   BehaviorManager: () => (/* reexport safe */ _core_behaviors_behaviorManager__WEBPACK_IMPORTED_MODULE_42__.BehaviorManager),
-/* harmony export */   Camera: () => (/* reexport safe */ _core_3d_camera__WEBPACK_IMPORTED_MODULE_4__.Camera),
-/* harmony export */   Color: () => (/* reexport safe */ _core_graphics_color__WEBPACK_IMPORTED_MODULE_13__.Color),
-/* harmony export */   ComponentManager: () => (/* reexport safe */ _core_components_componentManager__WEBPACK_IMPORTED_MODULE_38__.ComponentManager),
-/* harmony export */   DefaultShader: () => (/* reexport safe */ _core_gl_shaders_defaultShader__WEBPACK_IMPORTED_MODULE_11__.DefaultShader),
-/* harmony export */   Draw: () => (/* reexport safe */ _core_graphics_draw__WEBPACK_IMPORTED_MODULE_19__.Draw),
+/* harmony export */   AnimatedEntity: () => (/* reexport safe */ _core_graphics_animatedEntity__WEBPACK_IMPORTED_MODULE_24__.AnimatedEntity),
+/* harmony export */   AnimatedSprite: () => (/* reexport safe */ _core_graphics_animatedSprite__WEBPACK_IMPORTED_MODULE_18__.AnimatedSprite),
+/* harmony export */   AnimatedSpriteComponent: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_44__.AnimatedSpriteComponent),
+/* harmony export */   AnimatedSpriteComponentBuilder: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_44__.AnimatedSpriteComponentBuilder),
+/* harmony export */   AnimatedSpriteComponentData: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_44__.AnimatedSpriteComponentData),
+/* harmony export */   AssetManager: () => (/* reexport safe */ _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_36__.AssetManager),
+/* harmony export */   BaseBehavior: () => (/* reexport safe */ _core_behaviors_baseBehavior__WEBPACK_IMPORTED_MODULE_46__.BaseBehavior),
+/* harmony export */   BaseComponent: () => (/* reexport safe */ _core_components_baseComponent__WEBPACK_IMPORTED_MODULE_41__.BaseComponent),
+/* harmony export */   BehaviorManager: () => (/* reexport safe */ _core_behaviors_behaviorManager__WEBPACK_IMPORTED_MODULE_47__.BehaviorManager),
+/* harmony export */   Camera: () => (/* reexport safe */ _core_3d_camera__WEBPACK_IMPORTED_MODULE_5__.Camera),
+/* harmony export */   Camera2D: () => (/* reexport safe */ _core_camera2d__WEBPACK_IMPORTED_MODULE_2__.Camera2D),
+/* harmony export */   ColliderComponent: () => (/* reexport safe */ _core_components_colliderComponent__WEBPACK_IMPORTED_MODULE_45__.ColliderComponent),
+/* harmony export */   ColliderComponentBuilder: () => (/* reexport safe */ _core_components_colliderComponent__WEBPACK_IMPORTED_MODULE_45__.ColliderComponentBuilder),
+/* harmony export */   ColliderComponentData: () => (/* reexport safe */ _core_components_colliderComponent__WEBPACK_IMPORTED_MODULE_45__.ColliderComponentData),
+/* harmony export */   Collision: () => (/* reexport safe */ _core_utils_collision__WEBPACK_IMPORTED_MODULE_32__.Collision),
+/* harmony export */   Color: () => (/* reexport safe */ _core_graphics_color__WEBPACK_IMPORTED_MODULE_15__.Color),
+/* harmony export */   ComponentManager: () => (/* reexport safe */ _core_components_componentManager__WEBPACK_IMPORTED_MODULE_42__.ComponentManager),
+/* harmony export */   DefaultShader: () => (/* reexport safe */ _core_gl_shaders_defaultShader__WEBPACK_IMPORTED_MODULE_12__.DefaultShader),
+/* harmony export */   Draw: () => (/* reexport safe */ _core_graphics_draw__WEBPACK_IMPORTED_MODULE_21__.Draw),
 /* harmony export */   Engine: () => (/* reexport safe */ _core_engine__WEBPACK_IMPORTED_MODULE_1__.Engine),
-/* harmony export */   Engine3D: () => (/* reexport safe */ _core_engine3d__WEBPACK_IMPORTED_MODULE_2__.Engine3D),
-/* harmony export */   GLUTools: () => (/* reexport safe */ _core_gl_gl__WEBPACK_IMPORTED_MODULE_9__.GLUTools),
+/* harmony export */   Engine3D: () => (/* reexport safe */ _core_engine3d__WEBPACK_IMPORTED_MODULE_3__.Engine3D),
+/* harmony export */   GLStats: () => (/* reexport safe */ _core_gl_glStats__WEBPACK_IMPORTED_MODULE_14__.GLStats),
+/* harmony export */   GLUTools: () => (/* reexport safe */ _core_gl_gl__WEBPACK_IMPORTED_MODULE_10__.GLUTools),
 /* harmony export */   Game: () => (/* reexport safe */ _core_game__WEBPACK_IMPORTED_MODULE_0__.Game),
-/* harmony export */   InputManager: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_31__.InputManager),
-/* harmony export */   KeyboardMovementBehavior: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_43__.KeyboardMovementBehavior),
-/* harmony export */   KeyboardMovementBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_43__.KeyboardMovementBehaviorBuilder),
-/* harmony export */   KeyboardMovementBehaviorData: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_43__.KeyboardMovementBehaviorData),
-/* harmony export */   Keys: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_31__.Keys),
-/* harmony export */   LitShader: () => (/* reexport safe */ _core_3d_litShader__WEBPACK_IMPORTED_MODULE_7__.LitShader),
-/* harmony export */   MESSAGE_ASSET_LOADER_LOADED: () => (/* reexport safe */ _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_32__.MESSAGE_ASSET_LOADER_LOADED),
-/* harmony export */   Material: () => (/* reexport safe */ _core_graphics_material__WEBPACK_IMPORTED_MODULE_22__.Material),
-/* harmony export */   MaterialManager: () => (/* reexport safe */ _core_graphics_materialManager__WEBPACK_IMPORTED_MODULE_24__.MaterialManager),
-/* harmony export */   Mesh: () => (/* reexport safe */ _core_3d_mesh__WEBPACK_IMPORTED_MODULE_5__.Mesh),
-/* harmony export */   MeshComponent: () => (/* reexport safe */ _core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_8__.MeshComponent),
-/* harmony export */   MeshComponentData: () => (/* reexport safe */ _core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_8__.MeshComponentData),
-/* harmony export */   Message: () => (/* reexport safe */ _core_com_message__WEBPACK_IMPORTED_MODULE_29__.Message),
-/* harmony export */   MessageBus: () => (/* reexport safe */ _core_com_messageBus__WEBPACK_IMPORTED_MODULE_30__.MessageBus),
-/* harmony export */   MessagePriority: () => (/* reexport safe */ _core_com_message__WEBPACK_IMPORTED_MODULE_29__.MessagePriority),
-/* harmony export */   MouseContext: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_31__.MouseContext),
-/* harmony export */   ObjLoader: () => (/* reexport safe */ _core_3d_objLoader__WEBPACK_IMPORTED_MODULE_6__.ObjLoader),
-/* harmony export */   ParticleEmitter: () => (/* reexport safe */ _core_graphics_particleEmitter__WEBPACK_IMPORTED_MODULE_21__.ParticleEmitter),
-/* harmony export */   RotationBehavior: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_44__.RotationBehavior),
-/* harmony export */   RotationBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_44__.RotationBehaviorBuilder),
-/* harmony export */   RotationBehaviorData: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_44__.RotationBehaviorData),
-/* harmony export */   Scene: () => (/* reexport safe */ _core_world_scene__WEBPACK_IMPORTED_MODULE_34__.Scene),
-/* harmony export */   Shader: () => (/* reexport safe */ _core_gl_shader__WEBPACK_IMPORTED_MODULE_10__.Shader),
-/* harmony export */   SimObject: () => (/* reexport safe */ _core_world_simObject__WEBPACK_IMPORTED_MODULE_33__.SimObject),
-/* harmony export */   Sprite: () => (/* reexport safe */ _core_graphics_sprite__WEBPACK_IMPORTED_MODULE_15__.Sprite),
-/* harmony export */   SpriteBatcher: () => (/* reexport safe */ _core_graphics_spriteBatcher__WEBPACK_IMPORTED_MODULE_20__.SpriteBatcher),
-/* harmony export */   SpriteComponent: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_39__.SpriteComponent),
-/* harmony export */   SpriteComponentBuilder: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_39__.SpriteComponentBuilder),
-/* harmony export */   SpriteComponentData: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_39__.SpriteComponentData),
-/* harmony export */   Texture: () => (/* reexport safe */ _core_graphics_texture__WEBPACK_IMPORTED_MODULE_17__.Texture),
-/* harmony export */   TextureManager: () => (/* reexport safe */ _core_graphics_textureManager__WEBPACK_IMPORTED_MODULE_18__.TextureManager),
-/* harmony export */   TileMap: () => (/* reexport safe */ _core_graphics_tileMap__WEBPACK_IMPORTED_MODULE_23__.TileMap),
-/* harmony export */   TileSet: () => (/* reexport safe */ _core_graphics_tileMap__WEBPACK_IMPORTED_MODULE_23__.TileSet),
-/* harmony export */   UI: () => (/* reexport safe */ _core_ui_ui__WEBPACK_IMPORTED_MODULE_3__.UI),
-/* harmony export */   Vertex: () => (/* reexport safe */ _core_graphics_vertex__WEBPACK_IMPORTED_MODULE_14__.Vertex),
-/* harmony export */   Zone: () => (/* reexport safe */ _core_world_zone__WEBPACK_IMPORTED_MODULE_35__.Zone),
-/* harmony export */   ZoneManager: () => (/* reexport safe */ _core_world_zoneManager__WEBPACK_IMPORTED_MODULE_36__.ZoneManager),
-/* harmony export */   ZoneState: () => (/* reexport safe */ _core_world_zone__WEBPACK_IMPORTED_MODULE_35__.ZoneState),
-/* harmony export */   gl: () => (/* reexport safe */ _core_gl_gl__WEBPACK_IMPORTED_MODULE_9__.gl),
-/* harmony export */   glAttrInfo: () => (/* reexport safe */ _core_gl_glBuffer__WEBPACK_IMPORTED_MODULE_12__.glAttrInfo),
-/* harmony export */   glBuffer: () => (/* reexport safe */ _core_gl_glBuffer__WEBPACK_IMPORTED_MODULE_12__.glBuffer),
-/* harmony export */   m4x4: () => (/* reexport safe */ _core_utils_m4x4__WEBPACK_IMPORTED_MODULE_27__.m4x4),
-/* harmony export */   transform: () => (/* reexport safe */ _core_utils_transform__WEBPACK_IMPORTED_MODULE_28__.transform),
-/* harmony export */   vec2: () => (/* reexport safe */ _core_utils_vec2__WEBPACK_IMPORTED_MODULE_25__.vec2),
-/* harmony export */   vec3: () => (/* reexport safe */ _core_utils_vec3__WEBPACK_IMPORTED_MODULE_26__.vec3)
+/* harmony export */   InputManager: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_35__.InputManager),
+/* harmony export */   KeyboardMovementBehavior: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_48__.KeyboardMovementBehavior),
+/* harmony export */   KeyboardMovementBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_48__.KeyboardMovementBehaviorBuilder),
+/* harmony export */   KeyboardMovementBehaviorData: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_48__.KeyboardMovementBehaviorData),
+/* harmony export */   Keys: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_35__.Keys),
+/* harmony export */   LitShader: () => (/* reexport safe */ _core_3d_litShader__WEBPACK_IMPORTED_MODULE_8__.LitShader),
+/* harmony export */   MESSAGE_ASSET_LOADER_LOADED: () => (/* reexport safe */ _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_36__.MESSAGE_ASSET_LOADER_LOADED),
+/* harmony export */   Material: () => (/* reexport safe */ _core_graphics_material__WEBPACK_IMPORTED_MODULE_25__.Material),
+/* harmony export */   MaterialManager: () => (/* reexport safe */ _core_graphics_materialManager__WEBPACK_IMPORTED_MODULE_27__.MaterialManager),
+/* harmony export */   Mesh: () => (/* reexport safe */ _core_3d_mesh__WEBPACK_IMPORTED_MODULE_6__.Mesh),
+/* harmony export */   MeshComponent: () => (/* reexport safe */ _core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_9__.MeshComponent),
+/* harmony export */   MeshComponentData: () => (/* reexport safe */ _core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_9__.MeshComponentData),
+/* harmony export */   Message: () => (/* reexport safe */ _core_com_message__WEBPACK_IMPORTED_MODULE_33__.Message),
+/* harmony export */   MessageBus: () => (/* reexport safe */ _core_com_messageBus__WEBPACK_IMPORTED_MODULE_34__.MessageBus),
+/* harmony export */   MessagePriority: () => (/* reexport safe */ _core_com_message__WEBPACK_IMPORTED_MODULE_33__.MessagePriority),
+/* harmony export */   MouseContext: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_35__.MouseContext),
+/* harmony export */   ObjLoader: () => (/* reexport safe */ _core_3d_objLoader__WEBPACK_IMPORTED_MODULE_7__.ObjLoader),
+/* harmony export */   ParticleEmitter: () => (/* reexport safe */ _core_graphics_particleEmitter__WEBPACK_IMPORTED_MODULE_23__.ParticleEmitter),
+/* harmony export */   RayCastBehavior: () => (/* reexport safe */ _core_behaviors_rayCastBehavior__WEBPACK_IMPORTED_MODULE_52__.RayCastBehavior),
+/* harmony export */   RayCastBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_rayCastBehavior__WEBPACK_IMPORTED_MODULE_52__.RayCastBehaviorBuilder),
+/* harmony export */   RayCastBehaviorData: () => (/* reexport safe */ _core_behaviors_rayCastBehavior__WEBPACK_IMPORTED_MODULE_52__.RayCastBehaviorData),
+/* harmony export */   RigidBodyBehavior: () => (/* reexport safe */ _core_behaviors_rigidBodyBehavior__WEBPACK_IMPORTED_MODULE_51__.RigidBodyBehavior),
+/* harmony export */   RigidBodyBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_rigidBodyBehavior__WEBPACK_IMPORTED_MODULE_51__.RigidBodyBehaviorBuilder),
+/* harmony export */   RigidBodyBehaviorData: () => (/* reexport safe */ _core_behaviors_rigidBodyBehavior__WEBPACK_IMPORTED_MODULE_51__.RigidBodyBehaviorData),
+/* harmony export */   RotationBehavior: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_49__.RotationBehavior),
+/* harmony export */   RotationBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_49__.RotationBehaviorBuilder),
+/* harmony export */   RotationBehaviorData: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_49__.RotationBehaviorData),
+/* harmony export */   Scene: () => (/* reexport safe */ _core_world_scene__WEBPACK_IMPORTED_MODULE_38__.Scene),
+/* harmony export */   Shader: () => (/* reexport safe */ _core_gl_shader__WEBPACK_IMPORTED_MODULE_11__.Shader),
+/* harmony export */   SimObject: () => (/* reexport safe */ _core_world_simObject__WEBPACK_IMPORTED_MODULE_37__.SimObject),
+/* harmony export */   Sprite: () => (/* reexport safe */ _core_graphics_sprite__WEBPACK_IMPORTED_MODULE_17__.Sprite),
+/* harmony export */   SpriteBatcher: () => (/* reexport safe */ _core_graphics_spriteBatcher__WEBPACK_IMPORTED_MODULE_22__.SpriteBatcher),
+/* harmony export */   SpriteComponent: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_43__.SpriteComponent),
+/* harmony export */   SpriteComponentBuilder: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_43__.SpriteComponentBuilder),
+/* harmony export */   SpriteComponentData: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_43__.SpriteComponentData),
+/* harmony export */   StatefulAnimationBehavior: () => (/* reexport safe */ _core_behaviors_statefulAnimationBehavior__WEBPACK_IMPORTED_MODULE_50__.StatefulAnimationBehavior),
+/* harmony export */   StatefulAnimationBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_statefulAnimationBehavior__WEBPACK_IMPORTED_MODULE_50__.StatefulAnimationBehaviorBuilder),
+/* harmony export */   StatefulAnimationBehaviorData: () => (/* reexport safe */ _core_behaviors_statefulAnimationBehavior__WEBPACK_IMPORTED_MODULE_50__.StatefulAnimationBehaviorData),
+/* harmony export */   Texture: () => (/* reexport safe */ _core_graphics_texture__WEBPACK_IMPORTED_MODULE_19__.Texture),
+/* harmony export */   TextureManager: () => (/* reexport safe */ _core_graphics_textureManager__WEBPACK_IMPORTED_MODULE_20__.TextureManager),
+/* harmony export */   TileMap: () => (/* reexport safe */ _core_graphics_tileMap__WEBPACK_IMPORTED_MODULE_26__.TileMap),
+/* harmony export */   TileSet: () => (/* reexport safe */ _core_graphics_tileMap__WEBPACK_IMPORTED_MODULE_26__.TileSet),
+/* harmony export */   UI: () => (/* reexport safe */ _core_ui_ui__WEBPACK_IMPORTED_MODULE_4__.UI),
+/* harmony export */   Vertex: () => (/* reexport safe */ _core_graphics_vertex__WEBPACK_IMPORTED_MODULE_16__.Vertex),
+/* harmony export */   Zone: () => (/* reexport safe */ _core_world_zone__WEBPACK_IMPORTED_MODULE_39__.Zone),
+/* harmony export */   ZoneManager: () => (/* reexport safe */ _core_world_zoneManager__WEBPACK_IMPORTED_MODULE_40__.ZoneManager),
+/* harmony export */   ZoneState: () => (/* reexport safe */ _core_world_zone__WEBPACK_IMPORTED_MODULE_39__.ZoneState),
+/* harmony export */   gl: () => (/* reexport safe */ _core_gl_gl__WEBPACK_IMPORTED_MODULE_10__.gl),
+/* harmony export */   glAttrInfo: () => (/* reexport safe */ _core_gl_glBuffer__WEBPACK_IMPORTED_MODULE_13__.glAttrInfo),
+/* harmony export */   glBuffer: () => (/* reexport safe */ _core_gl_glBuffer__WEBPACK_IMPORTED_MODULE_13__.glBuffer),
+/* harmony export */   m4x4: () => (/* reexport safe */ _core_utils_m4x4__WEBPACK_IMPORTED_MODULE_30__.m4x4),
+/* harmony export */   transform: () => (/* reexport safe */ _core_utils_transform__WEBPACK_IMPORTED_MODULE_31__.transform),
+/* harmony export */   vec2: () => (/* reexport safe */ _core_utils_vec2__WEBPACK_IMPORTED_MODULE_28__.vec2),
+/* harmony export */   vec3: () => (/* reexport safe */ _core_utils_vec3__WEBPACK_IMPORTED_MODULE_29__.vec3)
 /* harmony export */ });
 /* harmony import */ var _core_game__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./core/game */ "./BdvEngine/core/game.ts");
 /* harmony import */ var _core_engine__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./core/engine */ "./BdvEngine/core/engine.ts");
-/* harmony import */ var _core_engine3d__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./core/engine3d */ "./BdvEngine/core/engine3d.ts");
-/* harmony import */ var _core_ui_ui__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./core/ui/ui */ "./BdvEngine/core/ui/ui.ts");
-/* harmony import */ var _core_3d_camera__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./core/3d/camera */ "./BdvEngine/core/3d/camera.ts");
-/* harmony import */ var _core_3d_mesh__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./core/3d/mesh */ "./BdvEngine/core/3d/mesh.ts");
-/* harmony import */ var _core_3d_objLoader__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./core/3d/objLoader */ "./BdvEngine/core/3d/objLoader.ts");
-/* harmony import */ var _core_3d_litShader__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ./core/3d/litShader */ "./BdvEngine/core/3d/litShader.ts");
-/* harmony import */ var _core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(/*! ./core/3d/meshComponent */ "./BdvEngine/core/3d/meshComponent.ts");
-/* harmony import */ var _core_gl_gl__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(/*! ./core/gl/gl */ "./BdvEngine/core/gl/gl.ts");
-/* harmony import */ var _core_gl_shader__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(/*! ./core/gl/shader */ "./BdvEngine/core/gl/shader.ts");
-/* harmony import */ var _core_gl_shaders_defaultShader__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(/*! ./core/gl/shaders/defaultShader */ "./BdvEngine/core/gl/shaders/defaultShader.ts");
-/* harmony import */ var _core_gl_glBuffer__WEBPACK_IMPORTED_MODULE_12__ = __webpack_require__(/*! ./core/gl/glBuffer */ "./BdvEngine/core/gl/glBuffer.ts");
-/* harmony import */ var _core_graphics_color__WEBPACK_IMPORTED_MODULE_13__ = __webpack_require__(/*! ./core/graphics/color */ "./BdvEngine/core/graphics/color.ts");
-/* harmony import */ var _core_graphics_vertex__WEBPACK_IMPORTED_MODULE_14__ = __webpack_require__(/*! ./core/graphics/vertex */ "./BdvEngine/core/graphics/vertex.ts");
-/* harmony import */ var _core_graphics_sprite__WEBPACK_IMPORTED_MODULE_15__ = __webpack_require__(/*! ./core/graphics/sprite */ "./BdvEngine/core/graphics/sprite.ts");
-/* harmony import */ var _core_graphics_animatedSprite__WEBPACK_IMPORTED_MODULE_16__ = __webpack_require__(/*! ./core/graphics/animatedSprite */ "./BdvEngine/core/graphics/animatedSprite.ts");
-/* harmony import */ var _core_graphics_texture__WEBPACK_IMPORTED_MODULE_17__ = __webpack_require__(/*! ./core/graphics/texture */ "./BdvEngine/core/graphics/texture.ts");
-/* harmony import */ var _core_graphics_textureManager__WEBPACK_IMPORTED_MODULE_18__ = __webpack_require__(/*! ./core/graphics/textureManager */ "./BdvEngine/core/graphics/textureManager.ts");
-/* harmony import */ var _core_graphics_draw__WEBPACK_IMPORTED_MODULE_19__ = __webpack_require__(/*! ./core/graphics/draw */ "./BdvEngine/core/graphics/draw.ts");
-/* harmony import */ var _core_graphics_spriteBatcher__WEBPACK_IMPORTED_MODULE_20__ = __webpack_require__(/*! ./core/graphics/spriteBatcher */ "./BdvEngine/core/graphics/spriteBatcher.ts");
-/* harmony import */ var _core_graphics_particleEmitter__WEBPACK_IMPORTED_MODULE_21__ = __webpack_require__(/*! ./core/graphics/particleEmitter */ "./BdvEngine/core/graphics/particleEmitter.ts");
-/* harmony import */ var _core_graphics_material__WEBPACK_IMPORTED_MODULE_22__ = __webpack_require__(/*! ./core/graphics/material */ "./BdvEngine/core/graphics/material.ts");
-/* harmony import */ var _core_graphics_tileMap__WEBPACK_IMPORTED_MODULE_23__ = __webpack_require__(/*! ./core/graphics/tileMap */ "./BdvEngine/core/graphics/tileMap.ts");
-/* harmony import */ var _core_graphics_materialManager__WEBPACK_IMPORTED_MODULE_24__ = __webpack_require__(/*! ./core/graphics/materialManager */ "./BdvEngine/core/graphics/materialManager.ts");
-/* harmony import */ var _core_utils_vec2__WEBPACK_IMPORTED_MODULE_25__ = __webpack_require__(/*! ./core/utils/vec2 */ "./BdvEngine/core/utils/vec2.ts");
-/* harmony import */ var _core_utils_vec3__WEBPACK_IMPORTED_MODULE_26__ = __webpack_require__(/*! ./core/utils/vec3 */ "./BdvEngine/core/utils/vec3.ts");
-/* harmony import */ var _core_utils_m4x4__WEBPACK_IMPORTED_MODULE_27__ = __webpack_require__(/*! ./core/utils/m4x4 */ "./BdvEngine/core/utils/m4x4.ts");
-/* harmony import */ var _core_utils_transform__WEBPACK_IMPORTED_MODULE_28__ = __webpack_require__(/*! ./core/utils/transform */ "./BdvEngine/core/utils/transform.ts");
-/* harmony import */ var _core_com_message__WEBPACK_IMPORTED_MODULE_29__ = __webpack_require__(/*! ./core/com/message */ "./BdvEngine/core/com/message.ts");
-/* harmony import */ var _core_com_messageBus__WEBPACK_IMPORTED_MODULE_30__ = __webpack_require__(/*! ./core/com/messageBus */ "./BdvEngine/core/com/messageBus.ts");
-/* harmony import */ var _core_input_inputManager__WEBPACK_IMPORTED_MODULE_31__ = __webpack_require__(/*! ./core/input/inputManager */ "./BdvEngine/core/input/inputManager.ts");
-/* harmony import */ var _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_32__ = __webpack_require__(/*! ./core/assets/assetManager */ "./BdvEngine/core/assets/assetManager.ts");
-/* harmony import */ var _core_world_simObject__WEBPACK_IMPORTED_MODULE_33__ = __webpack_require__(/*! ./core/world/simObject */ "./BdvEngine/core/world/simObject.ts");
-/* harmony import */ var _core_world_scene__WEBPACK_IMPORTED_MODULE_34__ = __webpack_require__(/*! ./core/world/scene */ "./BdvEngine/core/world/scene.ts");
-/* harmony import */ var _core_world_zone__WEBPACK_IMPORTED_MODULE_35__ = __webpack_require__(/*! ./core/world/zone */ "./BdvEngine/core/world/zone.ts");
-/* harmony import */ var _core_world_zoneManager__WEBPACK_IMPORTED_MODULE_36__ = __webpack_require__(/*! ./core/world/zoneManager */ "./BdvEngine/core/world/zoneManager.ts");
-/* harmony import */ var _core_components_baseComponent__WEBPACK_IMPORTED_MODULE_37__ = __webpack_require__(/*! ./core/components/baseComponent */ "./BdvEngine/core/components/baseComponent.ts");
-/* harmony import */ var _core_components_componentManager__WEBPACK_IMPORTED_MODULE_38__ = __webpack_require__(/*! ./core/components/componentManager */ "./BdvEngine/core/components/componentManager.ts");
-/* harmony import */ var _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_39__ = __webpack_require__(/*! ./core/components/spriteComponent */ "./BdvEngine/core/components/spriteComponent.ts");
-/* harmony import */ var _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_40__ = __webpack_require__(/*! ./core/components/animatedSpriteComponent */ "./BdvEngine/core/components/animatedSpriteComponent.ts");
-/* harmony import */ var _core_behaviors_baseBehavior__WEBPACK_IMPORTED_MODULE_41__ = __webpack_require__(/*! ./core/behaviors/baseBehavior */ "./BdvEngine/core/behaviors/baseBehavior.ts");
-/* harmony import */ var _core_behaviors_behaviorManager__WEBPACK_IMPORTED_MODULE_42__ = __webpack_require__(/*! ./core/behaviors/behaviorManager */ "./BdvEngine/core/behaviors/behaviorManager.ts");
-/* harmony import */ var _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_43__ = __webpack_require__(/*! ./core/behaviors/keyboardMovementBehavior */ "./BdvEngine/core/behaviors/keyboardMovementBehavior.ts");
-/* harmony import */ var _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_44__ = __webpack_require__(/*! ./core/behaviors/rotationBehavior */ "./BdvEngine/core/behaviors/rotationBehavior.ts");
+/* harmony import */ var _core_camera2d__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./core/camera2d */ "./BdvEngine/core/camera2d.ts");
+/* harmony import */ var _core_engine3d__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./core/engine3d */ "./BdvEngine/core/engine3d.ts");
+/* harmony import */ var _core_ui_ui__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./core/ui/ui */ "./BdvEngine/core/ui/ui.ts");
+/* harmony import */ var _core_3d_camera__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./core/3d/camera */ "./BdvEngine/core/3d/camera.ts");
+/* harmony import */ var _core_3d_mesh__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./core/3d/mesh */ "./BdvEngine/core/3d/mesh.ts");
+/* harmony import */ var _core_3d_objLoader__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ./core/3d/objLoader */ "./BdvEngine/core/3d/objLoader.ts");
+/* harmony import */ var _core_3d_litShader__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(/*! ./core/3d/litShader */ "./BdvEngine/core/3d/litShader.ts");
+/* harmony import */ var _core_3d_meshComponent__WEBPACK_IMPORTED_MODULE_9__ = __webpack_require__(/*! ./core/3d/meshComponent */ "./BdvEngine/core/3d/meshComponent.ts");
+/* harmony import */ var _core_gl_gl__WEBPACK_IMPORTED_MODULE_10__ = __webpack_require__(/*! ./core/gl/gl */ "./BdvEngine/core/gl/gl.ts");
+/* harmony import */ var _core_gl_shader__WEBPACK_IMPORTED_MODULE_11__ = __webpack_require__(/*! ./core/gl/shader */ "./BdvEngine/core/gl/shader.ts");
+/* harmony import */ var _core_gl_shaders_defaultShader__WEBPACK_IMPORTED_MODULE_12__ = __webpack_require__(/*! ./core/gl/shaders/defaultShader */ "./BdvEngine/core/gl/shaders/defaultShader.ts");
+/* harmony import */ var _core_gl_glBuffer__WEBPACK_IMPORTED_MODULE_13__ = __webpack_require__(/*! ./core/gl/glBuffer */ "./BdvEngine/core/gl/glBuffer.ts");
+/* harmony import */ var _core_gl_glStats__WEBPACK_IMPORTED_MODULE_14__ = __webpack_require__(/*! ./core/gl/glStats */ "./BdvEngine/core/gl/glStats.ts");
+/* harmony import */ var _core_graphics_color__WEBPACK_IMPORTED_MODULE_15__ = __webpack_require__(/*! ./core/graphics/color */ "./BdvEngine/core/graphics/color.ts");
+/* harmony import */ var _core_graphics_vertex__WEBPACK_IMPORTED_MODULE_16__ = __webpack_require__(/*! ./core/graphics/vertex */ "./BdvEngine/core/graphics/vertex.ts");
+/* harmony import */ var _core_graphics_sprite__WEBPACK_IMPORTED_MODULE_17__ = __webpack_require__(/*! ./core/graphics/sprite */ "./BdvEngine/core/graphics/sprite.ts");
+/* harmony import */ var _core_graphics_animatedSprite__WEBPACK_IMPORTED_MODULE_18__ = __webpack_require__(/*! ./core/graphics/animatedSprite */ "./BdvEngine/core/graphics/animatedSprite.ts");
+/* harmony import */ var _core_graphics_texture__WEBPACK_IMPORTED_MODULE_19__ = __webpack_require__(/*! ./core/graphics/texture */ "./BdvEngine/core/graphics/texture.ts");
+/* harmony import */ var _core_graphics_textureManager__WEBPACK_IMPORTED_MODULE_20__ = __webpack_require__(/*! ./core/graphics/textureManager */ "./BdvEngine/core/graphics/textureManager.ts");
+/* harmony import */ var _core_graphics_draw__WEBPACK_IMPORTED_MODULE_21__ = __webpack_require__(/*! ./core/graphics/draw */ "./BdvEngine/core/graphics/draw.ts");
+/* harmony import */ var _core_graphics_spriteBatcher__WEBPACK_IMPORTED_MODULE_22__ = __webpack_require__(/*! ./core/graphics/spriteBatcher */ "./BdvEngine/core/graphics/spriteBatcher.ts");
+/* harmony import */ var _core_graphics_particleEmitter__WEBPACK_IMPORTED_MODULE_23__ = __webpack_require__(/*! ./core/graphics/particleEmitter */ "./BdvEngine/core/graphics/particleEmitter.ts");
+/* harmony import */ var _core_graphics_animatedEntity__WEBPACK_IMPORTED_MODULE_24__ = __webpack_require__(/*! ./core/graphics/animatedEntity */ "./BdvEngine/core/graphics/animatedEntity.ts");
+/* harmony import */ var _core_graphics_material__WEBPACK_IMPORTED_MODULE_25__ = __webpack_require__(/*! ./core/graphics/material */ "./BdvEngine/core/graphics/material.ts");
+/* harmony import */ var _core_graphics_tileMap__WEBPACK_IMPORTED_MODULE_26__ = __webpack_require__(/*! ./core/graphics/tileMap */ "./BdvEngine/core/graphics/tileMap.ts");
+/* harmony import */ var _core_graphics_materialManager__WEBPACK_IMPORTED_MODULE_27__ = __webpack_require__(/*! ./core/graphics/materialManager */ "./BdvEngine/core/graphics/materialManager.ts");
+/* harmony import */ var _core_utils_vec2__WEBPACK_IMPORTED_MODULE_28__ = __webpack_require__(/*! ./core/utils/vec2 */ "./BdvEngine/core/utils/vec2.ts");
+/* harmony import */ var _core_utils_vec3__WEBPACK_IMPORTED_MODULE_29__ = __webpack_require__(/*! ./core/utils/vec3 */ "./BdvEngine/core/utils/vec3.ts");
+/* harmony import */ var _core_utils_m4x4__WEBPACK_IMPORTED_MODULE_30__ = __webpack_require__(/*! ./core/utils/m4x4 */ "./BdvEngine/core/utils/m4x4.ts");
+/* harmony import */ var _core_utils_transform__WEBPACK_IMPORTED_MODULE_31__ = __webpack_require__(/*! ./core/utils/transform */ "./BdvEngine/core/utils/transform.ts");
+/* harmony import */ var _core_utils_collision__WEBPACK_IMPORTED_MODULE_32__ = __webpack_require__(/*! ./core/utils/collision */ "./BdvEngine/core/utils/collision.ts");
+/* harmony import */ var _core_com_message__WEBPACK_IMPORTED_MODULE_33__ = __webpack_require__(/*! ./core/com/message */ "./BdvEngine/core/com/message.ts");
+/* harmony import */ var _core_com_messageBus__WEBPACK_IMPORTED_MODULE_34__ = __webpack_require__(/*! ./core/com/messageBus */ "./BdvEngine/core/com/messageBus.ts");
+/* harmony import */ var _core_input_inputManager__WEBPACK_IMPORTED_MODULE_35__ = __webpack_require__(/*! ./core/input/inputManager */ "./BdvEngine/core/input/inputManager.ts");
+/* harmony import */ var _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_36__ = __webpack_require__(/*! ./core/assets/assetManager */ "./BdvEngine/core/assets/assetManager.ts");
+/* harmony import */ var _core_world_simObject__WEBPACK_IMPORTED_MODULE_37__ = __webpack_require__(/*! ./core/world/simObject */ "./BdvEngine/core/world/simObject.ts");
+/* harmony import */ var _core_world_scene__WEBPACK_IMPORTED_MODULE_38__ = __webpack_require__(/*! ./core/world/scene */ "./BdvEngine/core/world/scene.ts");
+/* harmony import */ var _core_world_zone__WEBPACK_IMPORTED_MODULE_39__ = __webpack_require__(/*! ./core/world/zone */ "./BdvEngine/core/world/zone.ts");
+/* harmony import */ var _core_world_zoneManager__WEBPACK_IMPORTED_MODULE_40__ = __webpack_require__(/*! ./core/world/zoneManager */ "./BdvEngine/core/world/zoneManager.ts");
+/* harmony import */ var _core_components_baseComponent__WEBPACK_IMPORTED_MODULE_41__ = __webpack_require__(/*! ./core/components/baseComponent */ "./BdvEngine/core/components/baseComponent.ts");
+/* harmony import */ var _core_components_componentManager__WEBPACK_IMPORTED_MODULE_42__ = __webpack_require__(/*! ./core/components/componentManager */ "./BdvEngine/core/components/componentManager.ts");
+/* harmony import */ var _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_43__ = __webpack_require__(/*! ./core/components/spriteComponent */ "./BdvEngine/core/components/spriteComponent.ts");
+/* harmony import */ var _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_44__ = __webpack_require__(/*! ./core/components/animatedSpriteComponent */ "./BdvEngine/core/components/animatedSpriteComponent.ts");
+/* harmony import */ var _core_components_colliderComponent__WEBPACK_IMPORTED_MODULE_45__ = __webpack_require__(/*! ./core/components/colliderComponent */ "./BdvEngine/core/components/colliderComponent.ts");
+/* harmony import */ var _core_behaviors_baseBehavior__WEBPACK_IMPORTED_MODULE_46__ = __webpack_require__(/*! ./core/behaviors/baseBehavior */ "./BdvEngine/core/behaviors/baseBehavior.ts");
+/* harmony import */ var _core_behaviors_behaviorManager__WEBPACK_IMPORTED_MODULE_47__ = __webpack_require__(/*! ./core/behaviors/behaviorManager */ "./BdvEngine/core/behaviors/behaviorManager.ts");
+/* harmony import */ var _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_48__ = __webpack_require__(/*! ./core/behaviors/keyboardMovementBehavior */ "./BdvEngine/core/behaviors/keyboardMovementBehavior.ts");
+/* harmony import */ var _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_49__ = __webpack_require__(/*! ./core/behaviors/rotationBehavior */ "./BdvEngine/core/behaviors/rotationBehavior.ts");
+/* harmony import */ var _core_behaviors_statefulAnimationBehavior__WEBPACK_IMPORTED_MODULE_50__ = __webpack_require__(/*! ./core/behaviors/statefulAnimationBehavior */ "./BdvEngine/core/behaviors/statefulAnimationBehavior.ts");
+/* harmony import */ var _core_behaviors_rigidBodyBehavior__WEBPACK_IMPORTED_MODULE_51__ = __webpack_require__(/*! ./core/behaviors/rigidBodyBehavior */ "./BdvEngine/core/behaviors/rigidBodyBehavior.ts");
+/* harmony import */ var _core_behaviors_rayCastBehavior__WEBPACK_IMPORTED_MODULE_52__ = __webpack_require__(/*! ./core/behaviors/rayCastBehavior */ "./BdvEngine/core/behaviors/rayCastBehavior.ts");
+
+
+
+
+
+
+
+
 
 
 
@@ -4519,16 +5539,68 @@ const BLD_SHOPS_START = 8;
 const BLD_TOWERS_START = 16;
 const BLD_CASTLES_START = 24;
 const ROAD_TILE = SAND_2;
+class WanderBehaviorData {
+    constructor() {
+        this.name = "wander";
+        this.speed = 0.03;
+        this.range = 300;
+    }
+    setFromJson(json) {
+        if (json.name)
+            this.name = json.name;
+        if (json.speed)
+            this.speed = json.speed;
+        if (json.range)
+            this.range = json.range;
+    }
+}
+class WanderBehavior extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.BaseBehavior {
+    constructor(data) {
+        super(data);
+        this.targetX = 0;
+        this.targetY = 0;
+        this.hasTarget = false;
+        this.animBehavior = null;
+        this.speed = data.speed;
+        this.range = data.range;
+    }
+    update(time) {
+        if (!this._owner)
+            return;
+        if (!this.animBehavior) {
+            let b = this._owner.getBehavior("animState");
+            if (b && b instanceof _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.StatefulAnimationBehavior) {
+                this.animBehavior = b;
+            }
+        }
+        let pos = this._owner.transform.position;
+        if (!this.hasTarget) {
+            this.targetX = pos.vx + (Math.random() - 0.5) * this.range * 2;
+            this.targetY = pos.vy + (Math.random() - 0.5) * this.range * 2;
+            this.hasTarget = true;
+        }
+        let dx = this.targetX - pos.vx;
+        let dy = this.targetY - pos.vy;
+        let dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 5) {
+            this.hasTarget = false;
+        }
+        else {
+            let move = this.speed * time;
+            pos.vx += (dx / dist) * move;
+            pos.vy += (dy / dist) * move;
+            if (this.animBehavior) {
+                this.animBehavior.setState(dx > 0 ? "walk_right" : "walk_left");
+            }
+        }
+    }
+}
 class TerrainGame extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Game {
     constructor() {
         super(...arguments);
         this.buildings = [];
-        this.buildingTexLoaded = false;
         this.occupiedTiles = new Set();
         this.buildingTiles = new Set();
-        this.camX = MAP_SIZE * TILE_RENDER_SIZE / 2;
-        this.camY = MAP_SIZE * TILE_RENDER_SIZE / 2;
-        this.zoom = 0.5;
         this.camSpeed = 0.6;
         this.seed = 54321;
         this.hoverTileX = -1;
@@ -4552,6 +5624,7 @@ class TerrainGame extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Game {
         this.overlayMap = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.TileMap(this.tileSet, MAP_SIZE, MAP_SIZE, TILE_RENDER_SIZE);
         this.overlayMap.heightScale = 0;
         this.overlayMap.shadowStrength = 0;
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.MaterialManager.register(new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Material("human_mat", "assets/textures/human_walking.png", _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white()));
         _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.MaterialManager.register(new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Material("buildings_mat", "assets/textures/buildings_tileset.png", _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white()));
         this.heightMap = new Float32Array(MAP_SIZE * MAP_SIZE);
         this.biomeMap = new Uint8Array(MAP_SIZE * MAP_SIZE);
@@ -4636,10 +5709,8 @@ class TerrainGame extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Game {
         }
         let enchR = rng.nextInt(20, 35);
         let varNoise = new Noise(seed + 500);
-        const GRASS_VARIANTS = [0, 5, 6, 7];
         function grassTile(x, y) {
-            let v = varNoise.get(x * 0.3, y * 0.3);
-            return GRASS_START + GRASS_VARIANTS[Math.floor(v * GRASS_VARIANTS.length) % GRASS_VARIANTS.length];
+            return GRASS_START;
         }
         function snowTile(x, y) {
             let v = varNoise.get(x * 0.3 + 100, y * 0.3 + 100);
@@ -4911,36 +5982,76 @@ class TerrainGame extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Game {
                 }
             }
         }
-        this.camX = MAP_SIZE * TILE_RENDER_SIZE / 2;
-        this.camY = MAP_SIZE * TILE_RENDER_SIZE / 2;
+        this.humanScene = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Scene();
+        let humanId = 0;
+        for (let city of cities) {
+            let humanCount = rng.nextInt(3, 8);
+            for (let i = 0; i < humanCount; i++) {
+                let hx = (city.x + rng.nextInt(-city.size, city.size)) * TILE_RENDER_SIZE;
+                let hy = (city.y + rng.nextInt(-city.size, city.size)) * TILE_RENDER_SIZE;
+                let human = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.SimObject(humanId++, `human_${humanId}`);
+                human.transform.position.vx = hx;
+                human.transform.position.vy = hy;
+                let spriteScale = TILE_RENDER_SIZE / 108;
+                human.transform.scale.vx = spriteScale;
+                human.transform.scale.vy = spriteScale;
+                let spriteData = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.AnimatedSpriteComponentData();
+                spriteData.name = "humanSprite";
+                spriteData.materialName = "human_mat";
+                spriteData.frameWidth = 108;
+                spriteData.frameHeight = 112;
+                spriteData.frameCount = 16;
+                spriteData.frameSequence = [0];
+                human.addComponent(new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.AnimatedSpriteComponent(spriteData));
+                let animData = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.StatefulAnimationBehaviorData();
+                animData.name = "animState";
+                animData.componentName = "humanSprite";
+                animData.frameTime = 120;
+                animData.states = {
+                    "idle": [0],
+                    "walk_right": [1, 2, 3, 4, 5, 6, 7, 6, 5, 4, 3, 2],
+                    "walk_left": [8, 9, 10, 11, 12, 13, 14, 13, 12, 11, 10, 9],
+                };
+                animData.defaultState = "idle";
+                human.addBehavior(new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.StatefulAnimationBehavior(animData));
+                let wanderData = new WanderBehaviorData();
+                wanderData.speed = 0.02 + rng.next() * 0.03;
+                wanderData.range = 200 + rng.nextInt(0, 200);
+                human.addBehavior(new WanderBehavior(wanderData));
+                this.humanScene.addObject(human);
+            }
+        }
+        this.humanScene.load();
+        this.camera.x = MAP_SIZE * TILE_RENDER_SIZE / 2;
+        this.camera.y = MAP_SIZE * TILE_RENDER_SIZE / 2;
     }
     update(deltaTime) {
-        let speed = this.camSpeed * deltaTime / this.zoom;
+        let speed = this.camSpeed * deltaTime / this.camera.zoom;
         if (_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.isKeyDown(_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Keys.W) || _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.isKeyDown(_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Keys.UP))
-            this.camY -= speed;
+            this.camera.y -= speed;
         if (_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.isKeyDown(_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Keys.S) || _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.isKeyDown(_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Keys.DOWN))
-            this.camY += speed;
+            this.camera.y += speed;
         if (_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.isKeyDown(_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Keys.A) || _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.isKeyDown(_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Keys.LEFT))
-            this.camX -= speed;
+            this.camera.x -= speed;
         if (_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.isKeyDown(_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Keys.D) || _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.isKeyDown(_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Keys.RIGHT))
-            this.camX += speed;
+            this.camera.x += speed;
         let wheel = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.consumeWheelDelta();
         if (wheel !== 0)
-            this.zoom = Math.max(0.005, Math.min(12, this.zoom * (wheel > 0 ? 0.85 : 1.15)));
+            this.camera.zoom = Math.max(0.005, Math.min(12, this.camera.zoom * (wheel > 0 ? 0.85 : 1.15)));
+        this.humanScene.update(deltaTime);
         let ws = MAP_SIZE * TILE_RENDER_SIZE;
-        this.camX = Math.max(0, Math.min(ws, this.camX));
-        this.camY = Math.max(0, Math.min(ws, this.camY));
+        this.camera.x = Math.max(0, Math.min(ws, this.camera.x));
+        this.camera.y = Math.max(0, Math.min(ws, this.camera.y));
         let mouse = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.getMousePosition();
         let sw = window.innerWidth, sh = window.innerHeight;
-        let ox = sw / 2 - this.camX * this.zoom, oy = sh / 2 - this.camY * this.zoom;
-        let ts = TILE_RENDER_SIZE * this.zoom;
-        this.hoverTileX = Math.floor((mouse.vx - ox) / ts);
-        this.hoverTileY = Math.floor((mouse.vy - oy) / ts);
+        let worldPos = this.camera.screenToWorld(mouse.vx, mouse.vy, sw, sh);
+        this.hoverTileX = Math.floor(worldPos.x / TILE_RENDER_SIZE);
+        this.hoverTileY = Math.floor(worldPos.y / TILE_RENDER_SIZE);
         if (this.hoverTileX < 0 || this.hoverTileX >= MAP_SIZE || this.hoverTileY < 0 || this.hoverTileY >= MAP_SIZE) {
             this.hoverTileX = -1;
             this.hoverTileY = -1;
         }
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.setText(this.coordsText, `Zoom: ${this.zoom.toFixed(2)}x | Seed: ${this.seed}`);
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.setText(this.coordsText, `Zoom: ${this.camera.zoom.toFixed(2)}x | Seed: ${this.seed}`);
         if (this.hoverTileX >= 0) {
             let ti = this.tileMap.getTile(this.hoverTileX, this.hoverTileY);
             let oi = this.overlayMap.getTile(this.hoverTileX, this.hoverTileY);
@@ -4956,40 +6067,32 @@ class TerrainGame extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Game {
     }
     render(shader) {
         let sw = window.innerWidth, sh = window.innerHeight;
-        this.tileMap.render(this.camX, this.camY, this.zoom, sw, sh);
-        this.overlayMap.render(this.camX, this.camY, this.zoom, sw, sh);
+        this.tileMap.render(this.camera, sw, sh);
+        this.overlayMap.render(this.camera, sw, sh);
         let bldMat = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.MaterialManager.get("buildings_mat");
         if (bldMat && bldMat.diffTexture && bldMat.diffTexture.textureIsLoaded) {
-            let ox = sw / 2 - this.camX * this.zoom;
-            let oy = sh / 2 - this.camY * this.zoom;
-            let ts = TILE_RENDER_SIZE * this.zoom;
+            let ts = TILE_RENDER_SIZE;
             let bSize = ts * 3;
             for (let b of this.buildings) {
-                let sx = b.tileX * ts + ox;
-                let sy = b.tileY * ts + oy;
-                if (sx + bSize < 0 || sx > sw || sy + bSize < 0 || sy > sh)
-                    continue;
-                _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.SpriteBatcher.drawTexture(bldMat, b.spriteCol, b.spriteRow, 8, 4, sx, sy, bSize, bSize);
+                let wx = b.tileX * ts;
+                let wy = b.tileY * ts;
+                _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.SpriteBatcher.drawTexture(bldMat, b.spriteCol, b.spriteRow, 8, 4, wx, wy, bSize, bSize);
             }
         }
-        let ts2 = TILE_RENDER_SIZE * this.zoom;
-        let ox2 = sw / 2 - this.camX * this.zoom, oy2 = sh / 2 - this.camY * this.zoom;
-        let hs = this.tileMap.heightScale * this.zoom;
+        this.humanScene.render(shader);
+        let ts = TILE_RENDER_SIZE;
         if (this.selectedTileX >= 0) {
-            let sx = Math.floor(this.selectedTileX * ts2 + ox2);
-            let sy = Math.floor(this.selectedTileY * ts2 + oy2);
-            let sw2 = Math.floor((this.selectedTileX + 1) * ts2 + ox2) - sx;
-            let sh2 = Math.floor((this.selectedTileY + 1) * ts2 + oy2) - sy;
-            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rectOutline(sx, sy, sw2, sh2, new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color(255, 255, 0, 255));
+            let wx = this.selectedTileX * ts;
+            let wy = this.selectedTileY * ts;
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rectOutline(wx, wy, ts, ts, new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color(255, 255, 0, 255));
         }
         if (this.hoverTileX >= 0) {
-            let mouse = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.getMousePosition();
-            let tileScreenX = Math.floor((mouse.vx - ox2) / ts2) * ts2 + ox2;
-            let tileScreenY = Math.floor((mouse.vy - oy2) / ts2) * ts2 + oy2;
-            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rect(tileScreenX, tileScreenY, ts2, 2, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white());
-            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rect(tileScreenX, tileScreenY + ts2 - 2, ts2, 2, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white());
-            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rect(tileScreenX, tileScreenY, 2, ts2, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white());
-            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rect(tileScreenX + ts2 - 2, tileScreenY, 2, ts2, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white());
+            let wx = this.hoverTileX * ts;
+            let wy = this.hoverTileY * ts;
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rect(wx, wy, ts, 2, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white());
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rect(wx, wy + ts - 2, ts, 2, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white());
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rect(wx, wy, 2, ts, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white());
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rect(wx + ts - 2, wy, 2, ts, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white());
         }
     }
 }
@@ -5077,7 +6180,7 @@ window.onload = () => {
     document.body.appendChild(canvas);
     engine = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Engine(canvas, new _terrainGame__WEBPACK_IMPORTED_MODULE_1__.TerrainGame(), {
         targetFps: 60,
-        showFps: true,
+        showStats: true,
     });
     engine.start();
 };

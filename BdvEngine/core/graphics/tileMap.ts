@@ -1,8 +1,15 @@
 import { gl } from '../gl/gl';
+import { Shader } from '../gl/shader';
+import { Texture } from './texture';
+import { TextureManager } from './textureManager';
 import { Color } from './color';
+import { Draw } from './draw';
 import { SpriteBatcher } from './spriteBatcher';
+import { Vertex } from './vertex';
 import { Material } from './material';
 import { MaterialManager } from './materialManager';
+import { m4x4 } from '../utils/m4x4';
+import { Camera2D } from '../camera2d';
 
 export interface TileSetConfig {
   imagePath: string;
@@ -26,16 +33,14 @@ export class TileSet {
   private rows: number = 0;
   private ready: boolean = false;
 
+  public filtering: 'nearest' | 'linear' = 'nearest';
+
   constructor(config: TileSetConfig) {
     this.tileWidth = config.tileWidth;
     this.tileHeight = config.tileHeight;
-
     this.material = new Material(config.materialName, config.imagePath, Color.white());
     MaterialManager.register(this.material);
   }
-
-  /** Set texture filtering. Call after texture loads. 'linear' for smooth terrain, 'nearest' for pixel art. */
-  public filtering: 'nearest' | 'linear' = 'nearest';
 
   public computeUVs(): boolean {
     if (this.ready) return true;
@@ -43,7 +48,6 @@ export class TileSet {
     let tex = this.material.diffTexture;
     if (!tex || !tex.textureIsLoaded) return false;
 
-    // Apply filtering preference
     if (this.filtering === 'linear') {
       tex.bind();
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -78,14 +82,6 @@ export class TileSet {
   }
 }
 
-/**
- * TileMap with layered 2.5D perspective.
- *
- * Each tile has an index and an elevation value (0-1).
- * Higher tiles shift upward, creating a depth illusion.
- * South-facing elevation drops render a darkened cliff face.
- * Tiles are rendered back-to-front (north-to-south) for correct overlap.
- */
 export class TileMap {
   public tileSet: TileSet;
 
@@ -93,22 +89,12 @@ export class TileMap {
   private mapHeight: number;
   private tiles: Int16Array;
   private heights: Float32Array;
-
   private renderTileSize: number;
 
-  /** Pixels of vertical offset per unit of height. Controls how "tall" the terrain looks. */
   public heightScale: number = 6;
-
-  /** How dark cliff faces get (0 = no shadow, 1 = black). */
   public shadowStrength: number = 0.45;
-
-  /** Optional low-detail tileset used when zoomed out. Same tile indices. */
   public lodTileSet: TileSet | null = null;
-
-  /** Tile screen size threshold below which the LOD tileset is used. */
   public lodThreshold: number = 6;
-
-  /** Tile indices that are always rendered, never skipped by LOD. */
   public importantTiles: Set<number> = new Set();
 
   constructor(tileSet: TileSet, mapWidth: number, mapHeight: number, renderTileSize: number = 16) {
@@ -147,42 +133,47 @@ export class TileMap {
   public get height(): number { return this.mapHeight; }
   public get tileSize(): number { return this.renderTileSize; }
 
-  public render(camX: number, camY: number, zoom: number, screenW: number, screenH: number): void {
+  /**
+   * Render visible tiles in WORLD SPACE.
+   * Tile positions are in world pixels: tile (x,y) renders at
+   * (x * tileSize, y * tileSize). The engine's camera projection
+   * handles the world-to-screen transform.
+   */
+  public render(camera: Camera2D, screenW: number, screenH: number): void {
     if (!this.tileSet.computeUVs()) return;
 
-    let ts = this.renderTileSize * zoom;
+    let ts = this.renderTileSize;
+    let zoom = camera.zoom;
+    let screenTs = ts * zoom; // tile size on screen for LOD decisions
 
     // Pick tileset: use LOD version when zoomed out
-    let useLod = this.lodTileSet && ts < this.lodThreshold;
+    let useLod = this.lodTileSet && screenTs < this.lodThreshold;
     let activeTileSet = useLod ? this.lodTileSet! : this.tileSet;
     if (useLod && !activeTileSet.computeUVs()) {
-      activeTileSet = this.tileSet; // fallback
+      activeTileSet = this.tileSet;
     }
 
-    let hs = this.heightScale * zoom;
-
-    // LOD: when tiles are sub-pixel, skip tiles to cap the rendered count.
-    // step=1 renders every tile, step=2 every other tile, etc.
+    // LOD step based on screen size of tiles
     let step = 1;
-    if (ts < 4)      step = 8;
-    else if (ts < 6)  step = 4;
-    else if (ts < 10) step = 2;
+    if (screenTs < 4)      step = 8;
+    else if (screenTs < 6)  step = 4;
+    else if (screenTs < 10) step = 2;
 
-    let effectiveTs = ts * step;
+    // Compute visible tile range from camera
+    let halfW = screenW / 2 / zoom;
+    let halfH = screenH / 2 / zoom;
+    let camTX = camera.x / ts;
+    let camTY = camera.y / ts;
 
-    let halfW = screenW / 2 / effectiveTs;
-    let halfH = screenH / 2 / effectiveTs;
-    let camTX = camX / (this.renderTileSize * step);
-    let camTY = camY / (this.renderTileSize * step);
+    let margin = 2;
+    let startX = Math.max(0, Math.floor(camTX - halfW / ts) - 1);
+    let startY = Math.max(0, Math.floor(camTY - halfH / ts) - margin);
+    let endX = Math.min(this.mapWidth, Math.ceil(camTX + halfW / ts) + 1);
+    let endY = Math.min(this.mapHeight, Math.ceil(camTY + halfH / ts) + 2);
 
-    let margin = (hs > 0) ? Math.ceil(hs * 1.5 / effectiveTs) + 2 : 2;
-    let startX = Math.max(0, Math.floor((camTX - halfW) - 1) * step);
-    let startY = Math.max(0, Math.floor((camTY - halfH) - margin) * step);
-    let endX = Math.min(this.mapWidth, Math.ceil((camTX + halfW) + 1) * step);
-    let endY = Math.min(this.mapHeight, Math.ceil((camTY + halfH) + 2) * step);
-
-    let offsetX = screenW / 2 - camX * zoom;
-    let offsetY = screenH / 2 - camY * zoom;
+    // Snap to step grid
+    startX = Math.floor(startX / step) * step;
+    startY = Math.floor(startY / step) * step;
 
     let mat = activeTileSet.material;
     let baseR = mat.diffColor.rFloat;
@@ -194,30 +185,23 @@ export class TileMap {
     if (!texture) return;
 
     let key = "__default_batch__:" + mat.diffTextureName;
-    let batch = (SpriteBatcher as any).batches as Map<string, any>;
-    if (!batch) {
+    let batches = (SpriteBatcher as any).batches as Map<string, any>;
+    if (!batches) {
       (SpriteBatcher as any).ensureInit();
-      batch = (SpriteBatcher as any).batches;
+      batches = (SpriteBatcher as any).batches;
     }
 
-    let batchEntry = batch.get(key);
+    let batchEntry = batches.get(key);
     if (!batchEntry) {
       batchEntry = { verts: [] as number[], texture: texture, material: null };
-      batch.set(key, batchEntry);
+      batches.set(key, batchEntry);
     }
     let buf: number[] = batchEntry.verts;
 
-    // Disable 2.5D effects at extreme zoom to avoid visual noise
-    let enable3d = ts >= 3;
-
     let hasImportant = this.importantTiles.size > 0 && step > 1;
-
-    // Render back-to-front (north to south) for correct overlap
-    // When step > 1 (zoomed out LOD), iterate every tile but only render
-    // LOD-sampled tiles OR important tiles (roads, buildings).
-    // At extreme zoom (step >= 8), skip even important tiles — they'd be invisible.
     let showImportant = hasImportant && step <= 2;
     let iterStep = showImportant ? 1 : step;
+
     for (let y = startY; y < endY; y += iterStep) {
       for (let x = startX; x < endX; x += iterStep) {
         let tileIdx = this.tiles[y * this.mapWidth + x];
@@ -227,83 +211,31 @@ export class TileMap {
         let isImportantTile = this.importantTiles.has(tileIdx);
 
         if (isImportantTile) {
-          // Important tiles: render only when showImportant, skip entirely otherwise
           if (!showImportant) continue;
         } else {
-          // Normal tiles: render only when on LOD grid
           if (!onGrid) continue;
         }
 
         let uv = activeTileSet.getUV(tileIdx);
         if (!uv) continue;
 
-        let h = this.heights[y * this.mapWidth + x];
-        let yOffset = enable3d ? -h * hs : 0;
+        let r = baseR, g = baseG, b = baseB;
+        let tileStep = (onGrid && !isImportantTile) ? step : 1;
 
-        // Compute shadow from height difference with south neighbor
-        let hSouth = (y + 1 < this.mapHeight) ? this.heights[(y + 1) * this.mapWidth + x] : h;
-        let hNorth = (y - 1 >= 0) ? this.heights[(y - 1) * this.mapWidth + x] : h;
-        let hEast = (x + 1 < this.mapWidth) ? this.heights[y * this.mapWidth + x + 1] : h;
-        let hWest = (x - 1 >= 0) ? this.heights[y * this.mapWidth + x - 1] : h;
+        let wx = x * ts;
+        let wy = y * ts;
+        let wx2 = (x + tileStep) * ts;
+        let wy2 = (y + tileStep) * ts;
 
-        // Ambient occlusion: tiles surrounded by higher terrain get darker
-        let avgNeighbor = (hSouth + hNorth + hEast + hWest) / 4;
-        let ao = Math.max(0, (avgNeighbor - h) * this.shadowStrength * 0.5);
-
-        // Directional shadow: light comes from top-left, so south and east facing slopes darken
-        let slopeS = Math.max(0, h - hSouth);
-        let slopeE = Math.max(0, h - hEast);
-        let light = 1.0 - Math.min(0.3, (slopeS + slopeE) * 0.1) - ao;
-
-        // Highlight for north-facing (catching light from above)
-        let slopeN = Math.max(0, h - hNorth);
-        light += slopeN * 0.08;
-        light = Math.max(0.5, Math.min(1.15, light));
-
-        let r = baseR * light;
-        let g = baseG * light;
-        let b = baseB * light;
-
-        let isImportant = this.importantTiles.has(tileIdx);
-        let tileStep = (onGrid && !isImportant) ? step : 1;
-        let sx = Math.floor(x * ts + offsetX);
-        let sy = Math.floor(y * ts + offsetY + yOffset);
-        let sx2 = Math.floor((x + tileStep) * ts + offsetX) + 1;
-        let sy2 = Math.floor((y + tileStep) * ts + offsetY + yOffset) + 1;
-
-        // Main tile face
         buf.push(
-          sx,  sy,  0, uv.u0, uv.v0, r, g, b, baseA,
-          sx,  sy2, 0, uv.u0, uv.v1, r, g, b, baseA,
-          sx2, sy2, 0, uv.u1, uv.v1, r, g, b, baseA,
-          sx2, sy2, 0, uv.u1, uv.v1, r, g, b, baseA,
-          sx2, sy,  0, uv.u1, uv.v0, r, g, b, baseA,
-          sx,  sy,  0, uv.u0, uv.v0, r, g, b, baseA,
+          wx,  wy,  0, uv.u0, uv.v0, r, g, b, baseA,
+          wx,  wy2, 0, uv.u0, uv.v1, r, g, b, baseA,
+          wx2, wy2, 0, uv.u1, uv.v1, r, g, b, baseA,
+          wx2, wy2, 0, uv.u1, uv.v1, r, g, b, baseA,
+          wx2, wy,  0, uv.u1, uv.v0, r, g, b, baseA,
+          wx,  wy,  0, uv.u0, uv.v0, r, g, b, baseA,
         );
 
-        if (!enable3d) continue;
-
-        // South-facing cliff face: only for significant height drops
-        let dropS = (h - hSouth) * hs;
-        if (dropS > 2) {
-          let cliffBottom = sy2 + Math.round(dropS);
-          // Use the tile's lit color darkened, not the raw base color
-          let cr = r * 0.6;
-          let cg = g * 0.6;
-          let cb = b * 0.6;
-          let crBot = r * 0.4;
-          let cgBot = g * 0.4;
-          let cbBot = b * 0.4;
-
-          buf.push(
-            sx,  sy2,        0, uv.u0, uv.v1, cr, cg, cb, baseA,
-            sx,  cliffBottom, 0, uv.u0, uv.v1, crBot, cgBot, cbBot, baseA,
-            sx2, cliffBottom, 0, uv.u1, uv.v1, crBot, cgBot, cbBot, baseA,
-            sx2, cliffBottom, 0, uv.u1, uv.v1, crBot, cgBot, cbBot, baseA,
-            sx2, sy2,        0, uv.u1, uv.v1, cr, cg, cb, baseA,
-            sx,  sy2,        0, uv.u0, uv.v1, cr, cg, cb, baseA,
-          );
-        }
       }
     }
   }

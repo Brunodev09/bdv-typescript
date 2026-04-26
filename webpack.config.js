@@ -3,6 +3,8 @@ const path = require("path");
 const entries = {
   "3d": "./example/app3d.ts",
   "terrain": "./example/appTerrain.ts",
+  "collision": "./example/appCollision.ts",
+  "stress": "./example/appStress.ts",
 };
 const entry = entries[process.env.ENTRY] || "./example/app.ts";
 

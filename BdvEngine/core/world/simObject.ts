@@ -93,6 +93,16 @@ export class SimObject {
     return undefined;
   }
 
+  /** Find a component by name. */
+  public getComponent(name: string): IComponent | undefined {
+    return this.components.find(c => c.name === name);
+  }
+
+  /** Find a behavior by name. */
+  public getBehavior(name: string): IBehavior | undefined {
+    return this.behaviors.find(b => b.name === name);
+  }
+
   public addComponent(component: IComponent): void {
     this.components.push(component);
     component.setOwner(this);

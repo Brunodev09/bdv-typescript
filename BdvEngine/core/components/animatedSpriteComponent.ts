@@ -66,7 +66,7 @@ export class AnimatedSpriteComponentBuilder implements IComponentBuilder {
 }
 
 export class AnimatedSpriteComponent extends BaseComponent {
-  private sprite: AnimatedSprite;
+  public sprite: AnimatedSprite;
 
   public constructor(data: AnimatedSpriteComponentData) {
     super(data);

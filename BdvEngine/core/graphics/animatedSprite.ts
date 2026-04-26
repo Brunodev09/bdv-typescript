@@ -82,6 +82,26 @@ export class AnimatedSprite extends Sprite implements IMessageHandler {
     }
   }
 
+  /** Change the frame sequence at runtime. Only resets frame if sequence actually changed. */
+  public setFrameSequence(sequence: number[]): void {
+    // Skip if same sequence (avoid resetting animation mid-play)
+    if (this._frameSequence.length === sequence.length &&
+        this._frameSequence.every((v, i) => v === sequence[i])) return;
+    this._frameSequence = sequence;
+    this._currentFrame = 0;
+    this._currentTime = 0;
+  }
+
+  /** Change ms per frame at runtime. */
+  public setFrameTime(ms: number): void {
+    this._frameTime = ms;
+  }
+
+  /** Get the current frame sequence. */
+  public get frameSequence(): number[] {
+    return this._frameSequence;
+  }
+
   public load(): void {
     super.load();
   }
@@ -127,27 +147,17 @@ export class AnimatedSprite extends Sprite implements IMessageHandler {
   }
 
   private calculateUVs(): void {
-    let totalWidth: number = 0;
-    let yValue: number = 0;
+    let colsPerRow = Math.floor(this._assetWidth / this._frameWidth);
     for (let i = 0; i < this._frameCount; ++i) {
-      totalWidth += this._frameWidth;
-      if (totalWidth > this._assetWidth) {
-        yValue++;
-        totalWidth = 0;
-      }
+      let col = i % colsPerRow;
+      let row = Math.floor(i / colsPerRow);
 
-      console.log("w/h", this._assetWidth, this._assetHeight);
+      let u = (col * this._frameWidth) / this._assetWidth;
+      let v = (row * this._frameHeight) / this._assetHeight;
+      let uMax = ((col + 1) * this._frameWidth) / this._assetWidth;
+      let vMax = ((row + 1) * this._frameHeight) / this._assetHeight;
 
-      let u = (i * this._frameWidth) / this._assetWidth;
-      let v = (yValue * this._frameHeight) / this._assetHeight;
-      let min: vec2 = new vec2(u, v);
-
-      let uMax = (i * this._frameWidth + this._frameWidth) / this._assetWidth;
-      let vMax =
-        (yValue * this._frameHeight + this._frameHeight) / this._assetHeight;
-      let max: vec2 = new vec2(uMax, vMax);
-
-      this._frameUVs.push(new UVInfo(min, max));
+      this._frameUVs.push(new UVInfo(new vec2(u, v), new vec2(uMax, vMax)));
     }
   }
 }

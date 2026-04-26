@@ -1,6 +1,7 @@
 // Core
 export { Game } from './core/game';
 export { Engine, EngineConfig } from './core/engine';
+export { Camera2D } from './core/camera2d';
 export { Engine3D, Engine3DConfig } from './core/engine3d';
 
 // UI
@@ -18,6 +19,7 @@ export { gl, GLUTools } from './core/gl/gl';
 export { Shader } from './core/gl/shader';
 export { DefaultShader } from './core/gl/shaders/defaultShader';
 export { glBuffer, glAttrInfo } from './core/gl/glBuffer';
+export { GLStats } from './core/gl/glStats';
 
 // Graphics
 export { Color } from './core/graphics/color';
@@ -29,6 +31,7 @@ export { TextureManager } from './core/graphics/textureManager';
 export { Draw } from './core/graphics/draw';
 export { SpriteBatcher } from './core/graphics/spriteBatcher';
 export { ParticleEmitter, ParticleConfig, ParticleShape } from './core/graphics/particleEmitter';
+export { AnimatedEntity } from './core/graphics/animatedEntity';
 export { Material, UniformValue } from './core/graphics/material';
 export { TileSet, TileSetConfig, TileMap } from './core/graphics/tileMap';
 export { MaterialManager } from './core/graphics/materialManager';
@@ -38,6 +41,7 @@ export { vec2 } from './core/utils/vec2';
 export { vec3 } from './core/utils/vec3';
 export { m4x4 } from './core/utils/m4x4';
 export { transform } from './core/utils/transform';
+export { Collision } from './core/utils/collision';
 
 // Communication
 export { Message, MessagePriority } from './core/com/message';
@@ -64,6 +68,7 @@ export { BaseComponent } from './core/components/baseComponent';
 export { ComponentManager } from './core/components/componentManager';
 export { SpriteComponent, SpriteComponentData, SpriteComponentBuilder } from './core/components/spriteComponent';
 export { AnimatedSpriteComponent, AnimatedSpriteComponentData, AnimatedSpriteComponentBuilder } from './core/components/animatedSpriteComponent';
+export { ColliderComponent, ColliderComponentData, ColliderComponentBuilder, ColliderShape } from './core/components/colliderComponent';
 
 // Behaviors
 export { IBehavior } from './core/behaviors/IBehavior';
@@ -73,3 +78,6 @@ export { BaseBehavior } from './core/behaviors/baseBehavior';
 export { BehaviorManager } from './core/behaviors/behaviorManager';
 export { KeyboardMovementBehavior, KeyboardMovementBehaviorData, KeyboardMovementBehaviorBuilder } from './core/behaviors/keyboardMovementBehavior';
 export { RotationBehavior, RotationBehaviorData, RotationBehaviorBuilder } from './core/behaviors/rotationBehavior';
+export { StatefulAnimationBehavior, StatefulAnimationBehaviorData, StatefulAnimationBehaviorBuilder } from './core/behaviors/statefulAnimationBehavior';
+export { RigidBodyBehavior, RigidBodyBehaviorData, RigidBodyBehaviorBuilder } from './core/behaviors/rigidBodyBehavior';
+export { RayCastBehavior, RayCastBehaviorData, RayCastBehaviorBuilder } from './core/behaviors/rayCastBehavior';
