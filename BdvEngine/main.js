@@ -1245,6 +1245,7 @@ class Engine {
         this.game.render(this.defaultShader);
         _world_zoneManager__WEBPACK_IMPORTED_MODULE_5__.ZoneManager.render(this.defaultShader);
         _graphics_spriteBatcher__WEBPACK_IMPORTED_MODULE_9__.SpriteBatcher.flush();
+        _graphics_draw__WEBPACK_IMPORTED_MODULE_8__.Draw.flush(this.defaultShader);
     }
     createFpsOverlay() {
         this.fpsElement = document.createElement("div");
@@ -2531,7 +2532,9 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ });
 /* harmony import */ var _gl_gl__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../gl/gl */ "./BdvEngine/core/gl/gl.ts");
 /* harmony import */ var _gl_shader__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../gl/shader */ "./BdvEngine/core/gl/shader.ts");
-/* harmony import */ var _draw__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./draw */ "./BdvEngine/core/graphics/draw.ts");
+/* harmony import */ var _color__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./color */ "./BdvEngine/core/graphics/color.ts");
+/* harmony import */ var _draw__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./draw */ "./BdvEngine/core/graphics/draw.ts");
+
 
 
 
@@ -2570,6 +2573,25 @@ class SpriteBatcher {
             buf.push(wx, wy, wz, v.texCoords.vx, v.texCoords.vy, r, g, b, a);
         }
     }
+    static drawTexture(material, srcCol, srcRow, gridCols, gridRows, x, y, width, height, tint = _color__WEBPACK_IMPORTED_MODULE_2__.Color.white()) {
+        let texture = material.diffTexture;
+        if (!texture)
+            return;
+        SpriteBatcher.ensureInit();
+        let key = "__default_batch__:" + material.diffTextureName;
+        let batch = SpriteBatcher.batches.get(key);
+        if (!batch) {
+            batch = { verts: [], texture: texture, material: null };
+            SpriteBatcher.batches.set(key, batch);
+        }
+        let u0 = srcCol / gridCols;
+        let v0 = srcRow / gridRows;
+        let u1 = (srcCol + 1) / gridCols;
+        let v1 = (srcRow + 1) / gridRows;
+        let r = tint.rFloat, g = tint.gFloat, b = tint.bFloat, a = tint.aFloat;
+        let buf = batch.verts;
+        buf.push(x, y, 0, u0, v0, r, g, b, a, x, y + height, 0, u0, v1, r, g, b, a, x + width, y + height, 0, u1, v1, r, g, b, a, x + width, y + height, 0, u1, v1, r, g, b, a, x + width, y, 0, u1, v0, r, g, b, a, x, y, 0, u0, v0, r, g, b, a);
+    }
     static flush() {
         if (SpriteBatcher.batches.size === 0)
             return;
@@ -2582,14 +2604,14 @@ class SpriteBatcher {
                 shader = batch.material.shader;
                 shader.use();
                 let projLoc = shader.getUniformLocation("u_proj");
-                _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix4fv(projLoc, false, new Float32Array(_draw__WEBPACK_IMPORTED_MODULE_2__.Draw.getProjection().mData));
+                _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix4fv(projLoc, false, new Float32Array(_draw__WEBPACK_IMPORTED_MODULE_3__.Draw.getProjection().mData));
                 batch.material.applyUniforms(shader);
             }
             else {
                 shader = SpriteBatcher.batchShader;
                 shader.use();
                 let projLoc = shader.getUniformLocation("u_proj");
-                _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix4fv(projLoc, false, new Float32Array(_draw__WEBPACK_IMPORTED_MODULE_2__.Draw.getProjection().mData));
+                _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix4fv(projLoc, false, new Float32Array(_draw__WEBPACK_IMPORTED_MODULE_3__.Draw.getProjection().mData));
             }
             batch.texture.activate(0);
             let diffLoc = shader.getUniformLocation("u_diffuse");
@@ -2973,7 +2995,7 @@ class TileMap {
         let buf = batchEntry.verts;
         let enable3d = ts >= 3;
         let hasImportant = this.importantTiles.size > 0 && step > 1;
-        let showImportant = hasImportant && step <= 4;
+        let showImportant = hasImportant && step <= 2;
         let iterStep = showImportant ? 1 : step;
         for (let y = startY; y < endY; y += iterStep) {
             for (let x = startX; x < endX; x += iterStep) {
@@ -2981,8 +3003,15 @@ class TileMap {
                 if (tileIdx < 0)
                     continue;
                 let onGrid = (x % step === 0) && (y % step === 0);
-                if (!onGrid && !(showImportant && this.importantTiles.has(tileIdx)))
-                    continue;
+                let isImportantTile = this.importantTiles.has(tileIdx);
+                if (isImportantTile) {
+                    if (!showImportant)
+                        continue;
+                }
+                else {
+                    if (!onGrid)
+                        continue;
+                }
                 let uv = activeTileSet.getUV(tileIdx);
                 if (!uv)
                     continue;
@@ -3003,11 +3032,12 @@ class TileMap {
                 let r = baseR * light;
                 let g = baseG * light;
                 let b = baseB * light;
-                let tileStep = onGrid ? step : 1;
-                let sx = Math.round(x * ts + offsetX);
-                let sy = Math.round(y * ts + offsetY + yOffset);
-                let sx2 = Math.round((x + tileStep) * ts + offsetX);
-                let sy2 = Math.round((y + tileStep) * ts + offsetY + yOffset);
+                let isImportant = this.importantTiles.has(tileIdx);
+                let tileStep = (onGrid && !isImportant) ? step : 1;
+                let sx = Math.floor(x * ts + offsetX);
+                let sy = Math.floor(y * ts + offsetY + yOffset);
+                let sx2 = Math.floor((x + tileStep) * ts + offsetX) + 1;
+                let sy2 = Math.floor((y + tileStep) * ts + offsetY + yOffset) + 1;
                 buf.push(sx, sy, 0, uv.u0, uv.v0, r, g, b, baseA, sx, sy2, 0, uv.u0, uv.v1, r, g, b, baseA, sx2, sy2, 0, uv.u1, uv.v1, r, g, b, baseA, sx2, sy2, 0, uv.u1, uv.v1, r, g, b, baseA, sx2, sy, 0, uv.u1, uv.v0, r, g, b, baseA, sx, sy, 0, uv.u0, uv.v0, r, g, b, baseA);
                 if (!enable3d)
                     continue;
@@ -4401,19 +4431,15 @@ class Noise {
         for (let i = 0; i < 256; i++)
             this.perm[256 + i] = this.perm[i];
     }
-    hash(x, y) {
-        return this.perm[(this.perm[x & 255] + y) & 511];
-    }
+    hash(x, y) { return this.perm[(this.perm[x & 255] + y) & 511]; }
     lerp(a, b, t) { return a + t * (b - a); }
     smooth(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
     get(x, y) {
         let xi = Math.floor(x), yi = Math.floor(y);
         let xf = x - xi, yf = y - yi;
         let sx = this.smooth(xf), sy = this.smooth(yf);
-        let a = this.hash(xi, yi) / 255;
-        let b = this.hash(xi + 1, yi) / 255;
-        let c = this.hash(xi, yi + 1) / 255;
-        let d = this.hash(xi + 1, yi + 1) / 255;
+        let a = this.hash(xi, yi) / 255, b = this.hash(xi + 1, yi) / 255;
+        let c = this.hash(xi, yi + 1) / 255, d = this.hash(xi + 1, yi + 1) / 255;
         return this.lerp(this.lerp(a, b, sx), this.lerp(c, d, sx), sy);
     }
     fbm(x, y, octaves = 4) {
@@ -4427,199 +4453,82 @@ class Noise {
         return val / max;
     }
 }
-const TILE_ROAD = 25;
-const TILE_HOUSE = 26;
-const TILE_BARRACKS = 27;
-const TILE_TOWER = 28;
-const TILE_CASTLE = 29;
-const TILE_OAK = 30;
-const TILE_PINE = 31;
-const TILE_AUTUMN = 32;
-const TILE_SNOW_PINE = 33;
-const TILE_ROCK = 34;
-const TILE_BUSH = 35;
-function heightToTile(h) {
-    if (h < 0.20)
-        return 0;
-    if (h < 0.28)
-        return 1;
-    if (h < 0.33)
-        return 2;
-    if (h < 0.36)
-        return 3;
-    if (h < 0.39)
-        return 4;
-    if (h < 0.42)
-        return 5;
-    if (h < 0.45)
-        return 7;
-    if (h < 0.50)
-        return 8;
-    if (h < 0.56)
-        return 9;
-    if (h < 0.62)
-        return 10;
-    if (h < 0.67)
-        return 11;
-    if (h < 0.72)
-        return 12;
-    if (h < 0.76)
-        return 13;
-    if (h < 0.80)
-        return 16;
-    if (h < 0.84)
-        return 19;
-    if (h < 0.88)
-        return 20;
-    if (h < 0.92)
-        return 21;
-    if (h < 0.96)
-        return 22;
-    return 23;
-}
-function isLand(tileIdx) {
-    return tileIdx >= 4;
-}
-function isWater(tileIdx) {
-    return tileIdx <= 3;
-}
-function spawnFortresses(tileMap, heightMap, mapSize, count, rng) {
-    let forts = [];
-    let minDist = 80;
-    let attempts = 0;
-    while (forts.length < count && attempts < count * 100) {
-        attempts++;
-        let margin = 30;
-        let x = rng.nextInt(margin, mapSize - margin);
-        let y = rng.nextInt(margin, mapSize - margin);
-        let h = heightMap[y * mapSize + x];
-        if (h < 0.42 || h > 0.78)
-            continue;
-        let tooClose = false;
-        for (let f of forts) {
-            let dx = f.x - x, dy = f.y - y;
-            if (dx * dx + dy * dy < minDist * minDist) {
-                tooClose = true;
-                break;
-            }
-        }
-        if (tooClose)
-            continue;
-        let size = rng.nextInt(5, 9);
-        forts.push({ x, y, size });
-    }
-    return forts;
-}
-function placeFortress(terrainMap, overlayMap, fx, fy, half, rng) {
-    overlayMap.setTile(fx, fy, TILE_CASTLE);
-    let buildingCount = rng.nextInt(3, Math.max(4, half));
-    for (let i = 0; i < buildingCount; i++) {
-        let dx = rng.nextInt(-half, half);
-        let dy = rng.nextInt(-half, half);
-        if (dx === 0 && dy === 0)
-            continue;
-        let tx = fx + dx, ty = fy + dy;
-        let terrain = terrainMap.getTile(tx, ty);
-        if (isWater(terrain))
-            continue;
-        if (overlayMap.getTile(tx, ty) >= 0)
-            continue;
-        let dist = Math.sqrt(dx * dx + dy * dy);
-        let type;
-        if (dist < half * 0.4) {
-            type = rng.next() > 0.5 ? TILE_BARRACKS : TILE_TOWER;
-        }
-        else {
-            type = TILE_HOUSE;
-        }
-        overlayMap.setTile(tx, ty, type);
-    }
-}
-function placeRoadTile(tileMap, x, y) {
-    let current = tileMap.getTile(x, y);
-    if (current === TILE_HOUSE || current === TILE_BARRACKS ||
-        current === TILE_TOWER || current === TILE_CASTLE || isWater(current))
-        return;
-    tileMap.setTile(x, y, TILE_ROAD);
-}
-function drawRoad(tileMap, x0, y0, x1, y1, rng) {
-    let horizontalFirst = rng.next() > 0.5;
-    let x = x0, y = y0;
-    if (horizontalFirst) {
-        let sx = x0 < x1 ? 1 : -1;
-        while (x !== x1) {
-            placeRoadTile(tileMap, x, y);
-            x += sx;
-        }
-        let sy = y0 < y1 ? 1 : -1;
-        while (y !== y1) {
-            placeRoadTile(tileMap, x, y);
-            y += sy;
-        }
-    }
-    else {
-        let sy = y0 < y1 ? 1 : -1;
-        while (y !== y1) {
-            placeRoadTile(tileMap, x, y);
-            y += sy;
-        }
-        let sx = x0 < x1 ? 1 : -1;
-        while (x !== x1) {
-            placeRoadTile(tileMap, x, y);
-            x += sx;
-        }
-    }
-    placeRoadTile(tileMap, x1, y1);
-}
-function connectFortresses(tileMap, forts, rng) {
-    if (forts.length < 2)
-        return;
-    for (let i = 0; i < forts.length; i++) {
-        if (rng.next() < 0.3)
-            continue;
-        let distances = [];
-        for (let j = 0; j < forts.length; j++) {
-            if (i === j)
-                continue;
-            let dx = forts[i].x - forts[j].x;
-            let dy = forts[i].y - forts[j].y;
-            distances.push({ idx: j, dist: Math.sqrt(dx * dx + dy * dy) });
-        }
-        distances.sort((a, b) => a.dist - b.dist);
-        let maxConnections = rng.nextInt(1, 2);
-        for (let c = 0; c < Math.min(maxConnections, distances.length); c++) {
-            if (rng.next() < 0.4)
-                continue;
-            let target = forts[distances[c].idx];
-            drawRoad(tileMap, forts[i].x, forts[i].y, target.x, target.y, rng);
-        }
-    }
-}
-const TILE_NAMES = {
-    0: "Deep Water", 1: "Water", 2: "Shallow", 3: "Shore",
-    4: "Wet Sand", 5: "Sand", 6: "Dark Sand", 7: "Sand-Grass",
-    8: "Light Grass", 9: "Grass", 10: "Dark Grass", 11: "Dense Grass",
-    12: "Light Forest", 13: "Dense Forest", 14: "Dark Forest", 15: "Dirt",
-    16: "Rock", 17: "Light Rock", 18: "Mountain Base", 19: "Mountain",
-    20: "Mountain Peak", 21: "Snow Rock", 22: "Snow", 23: "Bright Snow",
-    24: "Dirt Road", 25: "Cobblestone", 26: "House", 27: "Barracks",
-    28: "Tower", 29: "Castle",
-    30: "Oak Tree", 31: "Pine Tree", 32: "Autumn Tree", 33: "Snow Pine",
-    34: "Rock", 35: "Bush",
-};
-function tileIndexName(idx) {
-    return TILE_NAMES[idx] || `Tile ${idx}`;
+const GRASS_START = 0;
+const GRASS_COUNT = 9;
+const SAND_1 = 9;
+const SAND_2 = 10;
+const BEACH = 11;
+const WATER = 12;
+const MT_START = 13;
+const MT_COUNT = 16;
+const SNOW_START = 29;
+const SNOW_COUNT = 4;
+const CHAOS_GND_START = 33;
+const CHAOS_GND_COUNT = 7;
+const FOREST_TREE_1 = 48;
+const FOREST_TREE_2 = 49;
+const MAGIC_TREE_1 = 50;
+const MAGIC_TREE_2 = 51;
+const CHAOS_TREE = 52;
+const SNOW_TREE_1 = 53;
+const SNOW_TREE_2 = 54;
+const SNOW_TREE_3 = 55;
+const BUSH_START = 64;
+const BUSH_COUNT = 16;
+var Biome;
+(function (Biome) {
+    Biome[Biome["OCEAN"] = 0] = "OCEAN";
+    Biome[Biome["BEACH_B"] = 1] = "BEACH_B";
+    Biome[Biome["DESERT"] = 2] = "DESERT";
+    Biome[Biome["GRASSLAND"] = 3] = "GRASSLAND";
+    Biome[Biome["FOREST"] = 4] = "FOREST";
+    Biome[Biome["MOUNTAIN"] = 5] = "MOUNTAIN";
+    Biome[Biome["SNOW"] = 6] = "SNOW";
+    Biome[Biome["CHAOS"] = 7] = "CHAOS";
+    Biome[Biome["ENCHANTED"] = 8] = "ENCHANTED";
+})(Biome || (Biome = {}));
+const BIOME_NAMES = ["Ocean", "Beach", "Desert", "Grassland", "Forest", "Mountain", "Snow", "Chaos", "Enchanted"];
+function tileName(idx) {
+    if (idx >= GRASS_START && idx < GRASS_START + GRASS_COUNT)
+        return "Grass";
+    if (idx === SAND_1)
+        return "Sand";
+    if (idx === SAND_2)
+        return "Road";
+    if (idx === BEACH)
+        return "Beach";
+    if (idx === WATER)
+        return "Water";
+    if (idx >= MT_START && idx < MT_START + MT_COUNT)
+        return "Mountain";
+    if (idx >= SNOW_START && idx < SNOW_START + SNOW_COUNT)
+        return "Snow";
+    if (idx >= CHAOS_GND_START && idx < CHAOS_GND_START + CHAOS_GND_COUNT)
+        return "Chaos";
+    if (idx >= 40 && idx <= 47)
+        return "Tree";
+    if (idx >= BUSH_START && idx < BUSH_START + BUSH_COUNT)
+        return "Bush";
+    return `Tile ${idx}`;
 }
 const MAP_SIZE = 1024;
-const TILE_RENDER_SIZE = 64;
+const TILE_RENDER_SIZE = 96;
 const NOISE_SCALE = 0.006;
-const FORTRESS_COUNT = 60;
+const BLD_HOUSES_START = 0;
+const BLD_SHOPS_START = 8;
+const BLD_TOWERS_START = 16;
+const BLD_CASTLES_START = 24;
+const ROAD_TILE = SAND_2;
 class TerrainGame extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Game {
     constructor() {
         super(...arguments);
+        this.buildings = [];
+        this.buildingTexLoaded = false;
+        this.occupiedTiles = new Set();
+        this.buildingTiles = new Set();
         this.camX = MAP_SIZE * TILE_RENDER_SIZE / 2;
         this.camY = MAP_SIZE * TILE_RENDER_SIZE / 2;
-        this.zoom = 1;
+        this.zoom = 0.5;
         this.camSpeed = 0.6;
         this.seed = 54321;
         this.hoverTileX = -1;
@@ -4630,51 +4539,42 @@ class TerrainGame extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Game {
     init() {
         this.tileSet = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.TileSet({
             imagePath: "assets/textures/terrain.png",
-            tileWidth: 64,
-            tileHeight: 64,
+            tileWidth: 96, tileHeight: 96,
             materialName: "terrain_tiles",
         });
-        this.tileSet.filtering = 'nearest';
-        let lodTileSet = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.TileSet({
+        let lod = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.TileSet({
             imagePath: "assets/textures/terrain_lod.png",
-            tileWidth: 16,
-            tileHeight: 16,
+            tileWidth: 16, tileHeight: 16,
             materialName: "terrain_lod",
         });
         this.tileMap = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.TileMap(this.tileSet, MAP_SIZE, MAP_SIZE, TILE_RENDER_SIZE);
-        this.tileMap.lodTileSet = lodTileSet;
-        this.tileMap.importantTiles.add(TILE_ROAD);
+        this.tileMap.lodTileSet = lod;
         this.overlayMap = new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.TileMap(this.tileSet, MAP_SIZE, MAP_SIZE, TILE_RENDER_SIZE);
         this.overlayMap.heightScale = 0;
         this.overlayMap.shadowStrength = 0;
-        this.overlayMap.importantTiles.add(TILE_HOUSE);
-        this.overlayMap.importantTiles.add(TILE_BARRACKS);
-        this.overlayMap.importantTiles.add(TILE_TOWER);
-        this.overlayMap.importantTiles.add(TILE_CASTLE);
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.MaterialManager.register(new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Material("buildings_mat", "assets/textures/buildings_tileset.png", _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white()));
         this.heightMap = new Float32Array(MAP_SIZE * MAP_SIZE);
+        this.biomeMap = new Uint8Array(MAP_SIZE * MAP_SIZE);
         this.generateWorld(this.seed);
         let panel = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.panel(10, 40, {
-            width: "280px",
-            padding: "10px",
-            background: "rgba(0,0,0,0.7)",
-            borderRadius: "6px",
+            width: "280px", padding: "10px",
+            background: "rgba(0,0,0,0.7)", borderRadius: "6px",
         });
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.heading(panel, "Terrain Generator", { color: "#4af" });
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.text(panel, `${MAP_SIZE}×${MAP_SIZE} tiles, ${FORTRESS_COUNT} fortresses`);
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.text(panel, "WASD to move, scroll to zoom");
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.heading(panel, "Bdv World", { color: "#4af" });
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.text(panel, `${MAP_SIZE}×${MAP_SIZE} — WASD + scroll`);
         _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.spacer(panel);
         let seedRow = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.row(panel);
         _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.text(seedRow, "Seed:", { marginRight: "4px" });
-        let seedInput = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.input(seedRow, String(this.seed), () => { }, { width: "80px" });
+        let seedInput = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.input(seedRow, "", () => { }, { width: "80px" });
         seedInput.value = String(this.seed);
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.button(seedRow, "Generate", () => {
-            let val = parseInt(seedInput.value);
-            if (!isNaN(val) && val > 0) {
-                this.seed = val;
-                this.generateWorld(this.seed);
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.button(seedRow, "Go", () => {
+            let v = parseInt(seedInput.value);
+            if (!isNaN(v) && v > 0) {
+                this.seed = v;
+                this.generateWorld(v);
             }
         });
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.button(panel, "Random Seed", () => {
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.button(panel, "Random", () => {
             this.seed = Math.floor(Math.random() * 999999) + 1;
             seedInput.value = String(this.seed);
             this.generateWorld(this.seed);
@@ -4684,12 +4584,10 @@ class TerrainGame extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Game {
         this.tileInfoText = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.text(panel, "", { fontSize: "12px", fontFamily: "monospace" });
         _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Message.subscribe("MOUSE_DOWN", this);
     }
-    onMessage(message) {
-        if (message.code === "MOUSE_DOWN") {
-            if (this.hoverTileX >= 0 && this.hoverTileY >= 0) {
-                this.selectedTileX = this.hoverTileX;
-                this.selectedTileY = this.hoverTileY;
-            }
+    onMessage(msg) {
+        if (msg.code === "MOUSE_DOWN" && this.hoverTileX >= 0) {
+            this.selectedTileX = this.hoverTileX;
+            this.selectedTileY = this.hoverTileY;
         }
     }
     generateWorld(seed) {
@@ -4700,62 +4598,319 @@ class TerrainGame extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Game {
             for (let x = 0; x < MAP_SIZE; x++) {
                 let dx = (x / MAP_SIZE - 0.5) * 2;
                 let dy = (y / MAP_SIZE - 0.5) * 2;
-                let distSq = dx * dx + dy * dy;
-                let island = 1 - Math.min(1, distSq * 0.8);
+                let island = 1 - Math.min(1, (dx * dx + dy * dy) * 0.8);
                 let h = noise.fbm(x * NOISE_SCALE, y * NOISE_SCALE, 6) * island;
                 h = h * 0.85 + 0.15;
-                let latitude = Math.abs(dy);
-                let snowLine = 0.7;
-                if (latitude > snowLine && h > 0.30) {
-                    let snowBlend = (latitude - snowLine) / (1.0 - snowLine);
-                    snowBlend = snowBlend * snowBlend;
-                    h = h + snowBlend * (1.0 - h) * 0.8;
+                let lat = Math.abs(dy);
+                if (lat > 0.7 && h > 0.30) {
+                    let sb = Math.pow(((lat - 0.7) / 0.3), 2);
+                    h += sb * (1.0 - h) * 0.8;
                 }
                 this.heightMap[y * MAP_SIZE + x] = h;
-                this.tileMap.setTile(x, y, heightToTile(h));
-                this.tileMap.setHeight(x, y, h);
             }
+        }
+        let landTiles = [];
+        for (let y = 30; y < MAP_SIZE - 30; y += 3) {
+            for (let x = 30; x < MAP_SIZE - 30; x += 3) {
+                let h = this.heightMap[y * MAP_SIZE + x];
+                if (h > 0.42 && h < 0.78)
+                    landTiles.push([x, y]);
+            }
+        }
+        for (let i = landTiles.length - 1; i > 0; i--) {
+            let j = rng.nextInt(0, i);
+            [landTiles[i], landTiles[j]] = [landTiles[j], landTiles[i]];
+        }
+        let chaosCx = landTiles.length > 0 ? landTiles[0][0] : MAP_SIZE / 3;
+        let chaosCy = landTiles.length > 0 ? landTiles[0][1] : MAP_SIZE / 3;
+        let chaosR = rng.nextInt(25, 45);
+        let enchCx = MAP_SIZE / 2, enchCy = MAP_SIZE / 2;
+        let bestDist = 0;
+        for (let [lx, ly] of landTiles) {
+            let d = Math.sqrt(Math.pow((lx - chaosCx), 2) + Math.pow((ly - chaosCy), 2));
+            if (d > bestDist) {
+                bestDist = d;
+                enchCx = lx;
+                enchCy = ly;
+            }
+        }
+        let enchR = rng.nextInt(20, 35);
+        let varNoise = new Noise(seed + 500);
+        const GRASS_VARIANTS = [0, 5, 6, 7];
+        function grassTile(x, y) {
+            let v = varNoise.get(x * 0.3, y * 0.3);
+            return GRASS_START + GRASS_VARIANTS[Math.floor(v * GRASS_VARIANTS.length) % GRASS_VARIANTS.length];
+        }
+        function snowTile(x, y) {
+            let v = varNoise.get(x * 0.3 + 100, y * 0.3 + 100);
+            return SNOW_START + Math.floor(v * SNOW_COUNT) % SNOW_COUNT;
+        }
+        function chaosTile(x, y) {
+            let v = varNoise.get(x * 0.3 + 200, y * 0.3 + 200);
+            return CHAOS_GND_START + Math.floor(v * CHAOS_GND_COUNT) % CHAOS_GND_COUNT;
+        }
+        function sandTile(x, y) {
+            let v = varNoise.get(x * 0.5 + 300, y * 0.5 + 300);
+            return v > 0.5 ? SAND_1 : SAND_2;
         }
         for (let y = 0; y < MAP_SIZE; y++) {
             for (let x = 0; x < MAP_SIZE; x++) {
                 let h = this.heightMap[y * MAP_SIZE + x];
-                let tile = this.tileMap.getTile(x, y);
-                if (isWater(tile))
+                let lat = Math.abs((y / MAP_SIZE - 0.5) * 2);
+                let chD = Math.sqrt(Math.pow((x - chaosCx), 2) + Math.pow((y - chaosCy), 2));
+                let eD = Math.sqrt(Math.pow((x - enchCx), 2) + Math.pow((y - enchCy), 2));
+                let biome;
+                let tile;
+                if (h < 0.38) {
+                    biome = 0;
+                    tile = WATER;
+                }
+                else if (chD < chaosR && h > 0.38) {
+                    biome = 7;
+                    tile = chaosTile(x, y);
+                }
+                else if (eD < enchR && h > 0.38) {
+                    biome = 8;
+                    tile = grassTile(x, y);
+                }
+                else if (h > 0.85 || (lat > 0.78 && h > 0.35)) {
+                    biome = 6;
+                    tile = snowTile(x, y);
+                }
+                else if (h > 0.65) {
+                    biome = 5;
+                    tile = grassTile(x, y);
+                }
+                else if (h > 0.55) {
+                    biome = 4;
+                    tile = grassTile(x, y);
+                }
+                else {
+                    biome = 3;
+                    tile = grassTile(x, y);
+                }
+                this.biomeMap[y * MAP_SIZE + x] = biome;
+                this.tileMap.setTile(x, y, tile);
+                this.tileMap.setHeight(x, y, h);
+            }
+        }
+        let riverCount = rng.nextInt(6, 12);
+        for (let ri = 0; ri < riverCount; ri++) {
+            let sx = 0, sy = 0, found = false;
+            for (let attempt = 0; attempt < 300; attempt++) {
+                sx = rng.nextInt(20, MAP_SIZE - 20);
+                sy = rng.nextInt(20, MAP_SIZE - 20);
+                let h = this.heightMap[sy * MAP_SIZE + sx];
+                if (h > 0.65 && h < 0.85) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                continue;
+            let rx = sx, ry = sy;
+            let maxSteps = MAP_SIZE * 2;
+            for (let step = 0; step < maxSteps; step++) {
+                let h = this.heightMap[ry * MAP_SIZE + rx];
+                if (h < 0.35)
+                    break;
+                this.tileMap.setTile(rx, ry, WATER);
+                this.biomeMap[ry * MAP_SIZE + rx] = 0;
+                let bestH = h;
+                let bestX = rx, bestY = ry;
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dx = -1; dx <= 1; dx++) {
+                        if (dx === 0 && dy === 0)
+                            continue;
+                        let nx = rx + dx, ny = ry + dy;
+                        if (nx < 0 || nx >= MAP_SIZE || ny < 0 || ny >= MAP_SIZE)
+                            continue;
+                        let nh = this.heightMap[ny * MAP_SIZE + nx];
+                        if (nh < bestH) {
+                            bestH = nh;
+                            bestX = nx;
+                            bestY = ny;
+                        }
+                    }
+                }
+                if (bestX === rx && bestY === ry) {
+                    rx += rng.nextInt(-1, 1);
+                    ry += rng.nextInt(-1, 1);
+                    rx = Math.max(1, Math.min(MAP_SIZE - 2, rx));
+                    ry = Math.max(1, Math.min(MAP_SIZE - 2, ry));
+                }
+                else {
+                    rx = bestX;
+                    ry = bestY;
+                }
+            }
+        }
+        for (let y = 0; y < MAP_SIZE; y++) {
+            for (let x = 0; x < MAP_SIZE; x++) {
+                let b = this.biomeMap[y * MAP_SIZE + x];
+                let r = rng.next();
+                if (b === 4) {
+                    if (r < 0.15)
+                        this.overlayMap.setTile(x, y, rng.next() > 0.5 ? FOREST_TREE_1 : FOREST_TREE_2);
+                    else if (r < 0.18)
+                        this.overlayMap.setTile(x, y, BUSH_START + rng.nextInt(0, 7));
+                }
+                else if (b === 8) {
+                    if (r < 0.20)
+                        this.overlayMap.setTile(x, y, rng.next() > 0.5 ? MAGIC_TREE_1 : MAGIC_TREE_2);
+                    else if (r < 0.25)
+                        this.overlayMap.setTile(x, y, BUSH_START + rng.nextInt(8, 15));
+                }
+                else if (b === 7) {
+                    if (r < 0.12)
+                        this.overlayMap.setTile(x, y, CHAOS_TREE);
+                    else if (r < 0.16)
+                        this.overlayMap.setTile(x, y, BUSH_START + rng.nextInt(0, BUSH_COUNT - 1));
+                }
+                else if (b === 6) {
+                    if (r < 0.06)
+                        this.overlayMap.setTile(x, y, SNOW_TREE_1 + rng.nextInt(0, 2));
+                    else if (r < 0.08)
+                        this.overlayMap.setTile(x, y, BUSH_START + rng.nextInt(0, BUSH_COUNT - 1));
+                }
+                else if (b === 5) {
+                    if (r < 0.10)
+                        this.overlayMap.setTile(x, y, MT_START + rng.nextInt(0, MT_COUNT - 1));
+                    else if (r < 0.13)
+                        this.overlayMap.setTile(x, y, BUSH_START + rng.nextInt(0, BUSH_COUNT - 1));
+                }
+                else if (b === 3) {
+                    if (r < 0.02)
+                        this.overlayMap.setTile(x, y, rng.next() > 0.5 ? FOREST_TREE_1 : FOREST_TREE_2);
+                    else if (r < 0.03)
+                        this.overlayMap.setTile(x, y, BUSH_START + rng.nextInt(0, 7));
+                }
+            }
+        }
+        this.buildings = [];
+        this.occupiedTiles.clear();
+        this.buildingTiles.clear();
+        let cities = [];
+        let cityCount = rng.nextInt(15, 30);
+        let cityMinDist = 60;
+        for (let attempt = 0; attempt < cityCount * 50 && cities.length < cityCount; attempt++) {
+            let cx = rng.nextInt(30, MAP_SIZE - 30);
+            let cy = rng.nextInt(30, MAP_SIZE - 30);
+            let b = this.biomeMap[cy * MAP_SIZE + cx];
+            if (b !== 3 && b !== 4)
+                continue;
+            let tooClose = false;
+            for (let c of cities) {
+                if (Math.sqrt(Math.pow((c.x - cx), 2) + Math.pow((c.y - cy), 2)) < cityMinDist) {
+                    tooClose = true;
+                    break;
+                }
+            }
+            if (tooClose)
+                continue;
+            let size = rng.nextInt(3, 7);
+            cities.push({ x: cx, y: cy, size });
+            let BLDG_FOOTPRINT = 5;
+            let placeBuilding = (bx, by, col, row) => {
+                if (bx < 1 || by < 1 || bx + BLDG_FOOTPRINT >= MAP_SIZE || by + BLDG_FOOTPRINT >= MAP_SIZE)
+                    return false;
+                for (let ddy = 0; ddy < BLDG_FOOTPRINT; ddy++)
+                    for (let ddx = 0; ddx < BLDG_FOOTPRINT; ddx++) {
+                        let tx = bx + ddx, ty = by + ddy;
+                        if (this.occupiedTiles.has(ty * MAP_SIZE + tx))
+                            return false;
+                        let tb = this.biomeMap[ty * MAP_SIZE + tx];
+                        if (tb === 0 || tb === 1)
+                            return false;
+                    }
+                this.buildings.push({ tileX: bx, tileY: by, spriteCol: col, spriteRow: row });
+                for (let ddy = 0; ddy < BLDG_FOOTPRINT; ddy++)
+                    for (let ddx = 0; ddx < BLDG_FOOTPRINT; ddx++)
+                        this.buildingTiles.add((by + ddy) * MAP_SIZE + (bx + ddx));
+                for (let ddy = -1; ddy <= BLDG_FOOTPRINT; ddy++)
+                    for (let ddx = -1; ddx <= BLDG_FOOTPRINT; ddx++) {
+                        let tx = bx + ddx, ty = by + ddy;
+                        if (tx < 0 || tx >= MAP_SIZE || ty < 0 || ty >= MAP_SIZE)
+                            continue;
+                        this.occupiedTiles.add(ty * MAP_SIZE + tx);
+                        this.overlayMap.setTile(tx, ty, -1);
+                    }
+                return true;
+            };
+            placeBuilding(cx, cy, rng.nextInt(0, 7), 3);
+            let buildCount = rng.nextInt(4, size * 3);
+            for (let bi = 0; bi < buildCount; bi++) {
+                let dx = rng.nextInt(-size, size);
+                let dy = rng.nextInt(-size, size);
+                let bx = cx + Math.round(dx / 6) * 6;
+                let by = cy + Math.round(dy / 6) * 6;
+                if (bx < 2 || bx >= MAP_SIZE - 2 || by < 2 || by >= MAP_SIZE - 2)
                     continue;
-                let latitude = Math.abs((y / MAP_SIZE - 0.5) * 2);
-                let roll = rng.next();
-                if (tile >= 8 && tile <= 11) {
-                    if (roll < 0.08) {
-                        this.overlayMap.setTile(x, y, rng.next() > 0.3 ? TILE_OAK : TILE_BUSH);
+                let dist = Math.sqrt(dx * dx + dy * dy);
+                let row;
+                if (dist < size * 0.4) {
+                    row = rng.nextInt(1, 2);
+                }
+                else {
+                    row = 0;
+                }
+                placeBuilding(bx, by, rng.nextInt(0, 7), row);
+            }
+        }
+        for (let i = 0; i < cities.length; i++) {
+            let distances = [];
+            for (let j = 0; j < cities.length; j++) {
+                if (i === j)
+                    continue;
+                let dx = cities[i].x - cities[j].x;
+                let dy = cities[i].y - cities[j].y;
+                distances.push({ idx: j, dist: Math.sqrt(dx * dx + dy * dy) });
+            }
+            distances.sort((a, b) => a.dist - b.dist);
+            if (rng.next() < 0.3)
+                continue;
+            let connections = rng.nextInt(1, 2);
+            for (let c = 0; c < Math.min(connections, distances.length); c++) {
+                if (rng.next() < 0.3)
+                    continue;
+                let target = cities[distances[c].idx];
+                let horizontalFirst = rng.next() > 0.5;
+                let x = cities[i].x, y = cities[i].y;
+                let tx = target.x, ty = target.y;
+                if (horizontalFirst) {
+                    let sx = x < tx ? 1 : -1;
+                    while (x !== tx) {
+                        if (this.biomeMap[y * MAP_SIZE + x] !== 0 && !this.occupiedTiles.has(y * MAP_SIZE + x)) {
+                            this.overlayMap.setTile(x, y, ROAD_TILE);
+                        }
+                        x += sx;
+                    }
+                    let sy = y < ty ? 1 : -1;
+                    while (y !== ty) {
+                        if (this.biomeMap[y * MAP_SIZE + x] !== 0 && !this.occupiedTiles.has(y * MAP_SIZE + x)) {
+                            this.overlayMap.setTile(x, y, ROAD_TILE);
+                        }
+                        y += sy;
                     }
                 }
-                else if (tile >= 12 && tile <= 14) {
-                    if (roll < 0.25) {
-                        this.overlayMap.setTile(x, y, rng.next() > 0.4 ? TILE_PINE : TILE_OAK);
+                else {
+                    let sy = y < ty ? 1 : -1;
+                    while (y !== ty) {
+                        if (this.biomeMap[y * MAP_SIZE + x] !== 0 && !this.occupiedTiles.has(y * MAP_SIZE + x)) {
+                            this.overlayMap.setTile(x, y, ROAD_TILE);
+                        }
+                        y += sy;
                     }
-                }
-                else if (tile >= 4 && tile <= 7) {
-                    if (roll < 0.02) {
-                        this.overlayMap.setTile(x, y, TILE_ROCK);
-                    }
-                }
-                else if (tile >= 16 && tile <= 20) {
-                    if (roll < 0.06) {
-                        this.overlayMap.setTile(x, y, TILE_ROCK);
-                    }
-                }
-                else if (tile >= 21 && tile <= 23) {
-                    if (latitude < 0.85 && roll < 0.05) {
-                        this.overlayMap.setTile(x, y, TILE_SNOW_PINE);
+                    let sx = x < tx ? 1 : -1;
+                    while (x !== tx) {
+                        if (this.biomeMap[y * MAP_SIZE + x] !== 0 && !this.occupiedTiles.has(y * MAP_SIZE + x)) {
+                            this.overlayMap.setTile(x, y, ROAD_TILE);
+                        }
+                        x += sx;
                     }
                 }
             }
         }
-        let forts = spawnFortresses(this.tileMap, this.heightMap, MAP_SIZE, FORTRESS_COUNT, rng);
-        for (let f of forts) {
-            placeFortress(this.tileMap, this.overlayMap, f.x, f.y, f.size, rng);
-        }
-        connectFortresses(this.tileMap, forts, rng);
         this.camX = MAP_SIZE * TILE_RENDER_SIZE / 2;
         this.camY = MAP_SIZE * TILE_RENDER_SIZE / 2;
     }
@@ -4770,65 +4925,72 @@ class TerrainGame extends _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Game {
         if (_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.isKeyDown(_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Keys.D) || _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.isKeyDown(_BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Keys.RIGHT))
             this.camX += speed;
         let wheel = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.consumeWheelDelta();
-        if (wheel !== 0) {
-            this.zoom = Math.max(0.02, Math.min(12, this.zoom * (wheel > 0 ? 0.85 : 1.15)));
-        }
-        let worldSize = MAP_SIZE * TILE_RENDER_SIZE;
-        this.camX = Math.max(0, Math.min(worldSize, this.camX));
-        this.camY = Math.max(0, Math.min(worldSize, this.camY));
+        if (wheel !== 0)
+            this.zoom = Math.max(0.005, Math.min(12, this.zoom * (wheel > 0 ? 0.85 : 1.15)));
+        let ws = MAP_SIZE * TILE_RENDER_SIZE;
+        this.camX = Math.max(0, Math.min(ws, this.camX));
+        this.camY = Math.max(0, Math.min(ws, this.camY));
         let mouse = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.getMousePosition();
-        let screenW = window.innerWidth;
-        let screenH = window.innerHeight;
-        let offsetX = screenW / 2 - this.camX * this.zoom;
-        let offsetY = screenH / 2 - this.camY * this.zoom;
+        let sw = window.innerWidth, sh = window.innerHeight;
+        let ox = sw / 2 - this.camX * this.zoom, oy = sh / 2 - this.camY * this.zoom;
         let ts = TILE_RENDER_SIZE * this.zoom;
-        this.hoverTileX = Math.floor((mouse.vx - offsetX) / ts);
-        this.hoverTileY = Math.floor((mouse.vy - offsetY) / ts);
-        if (this.hoverTileX < 0 || this.hoverTileX >= MAP_SIZE ||
-            this.hoverTileY < 0 || this.hoverTileY >= MAP_SIZE) {
+        this.hoverTileX = Math.floor((mouse.vx - ox) / ts);
+        this.hoverTileY = Math.floor((mouse.vy - oy) / ts);
+        if (this.hoverTileX < 0 || this.hoverTileX >= MAP_SIZE || this.hoverTileY < 0 || this.hoverTileY >= MAP_SIZE) {
             this.hoverTileX = -1;
             this.hoverTileY = -1;
         }
-        let camTileX = Math.floor(this.camX / TILE_RENDER_SIZE);
-        let camTileY = Math.floor(this.camY / TILE_RENDER_SIZE);
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.setText(this.coordsText, `Cam: ${camTileX},${camTileY} | Zoom: ${this.zoom.toFixed(1)}x | Seed: ${this.seed}`);
+        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.setText(this.coordsText, `Zoom: ${this.zoom.toFixed(2)}x | Seed: ${this.seed}`);
         if (this.hoverTileX >= 0) {
-            let tileIdx = this.tileMap.getTile(this.hoverTileX, this.hoverTileY);
-            let h = this.heightMap[this.hoverTileY * MAP_SIZE + this.hoverTileX] || 0;
-            let tileName = tileIndexName(tileIdx);
-            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.setText(this.tileInfoText, `Hover: ${this.hoverTileX},${this.hoverTileY} | ${tileName} (h:${h.toFixed(2)})`);
+            let ti = this.tileMap.getTile(this.hoverTileX, this.hoverTileY);
+            let oi = this.overlayMap.getTile(this.hoverTileX, this.hoverTileY);
+            let b = this.biomeMap[this.hoverTileY * MAP_SIZE + this.hoverTileX];
+            let ol = oi >= 0 ? ` + ${tileName(oi)}` : "";
+            let hasBuilding = this.buildingTiles.has(this.hoverTileY * MAP_SIZE + this.hoverTileX);
+            let bldInfo = hasBuilding ? " [Building]" : "";
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.setText(this.tileInfoText, `${this.hoverTileX},${this.hoverTileY} | ${BIOME_NAMES[b]} | ${tileName(ti)}${ol}${bldInfo}`);
         }
         else {
             _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.UI.setText(this.tileInfoText, "");
         }
     }
     render(shader) {
-        let screenW = window.innerWidth;
-        let screenH = window.innerHeight;
-        this.tileMap.render(this.camX, this.camY, this.zoom, screenW, screenH);
-        this.overlayMap.render(this.camX, this.camY, this.zoom, screenW, screenH);
-        let ts = TILE_RENDER_SIZE * this.zoom;
-        let offsetX = screenW / 2 - this.camX * this.zoom;
-        let offsetY = screenH / 2 - this.camY * this.zoom;
+        let sw = window.innerWidth, sh = window.innerHeight;
+        this.tileMap.render(this.camX, this.camY, this.zoom, sw, sh);
+        this.overlayMap.render(this.camX, this.camY, this.zoom, sw, sh);
+        let bldMat = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.MaterialManager.get("buildings_mat");
+        if (bldMat && bldMat.diffTexture && bldMat.diffTexture.textureIsLoaded) {
+            let ox = sw / 2 - this.camX * this.zoom;
+            let oy = sh / 2 - this.camY * this.zoom;
+            let ts = TILE_RENDER_SIZE * this.zoom;
+            let bSize = ts * 3;
+            for (let b of this.buildings) {
+                let sx = b.tileX * ts + ox;
+                let sy = b.tileY * ts + oy;
+                if (sx + bSize < 0 || sx > sw || sy + bSize < 0 || sy > sh)
+                    continue;
+                _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.SpriteBatcher.drawTexture(bldMat, b.spriteCol, b.spriteRow, 8, 4, sx, sy, bSize, bSize);
+            }
+        }
+        let ts2 = TILE_RENDER_SIZE * this.zoom;
+        let ox2 = sw / 2 - this.camX * this.zoom, oy2 = sh / 2 - this.camY * this.zoom;
         let hs = this.tileMap.heightScale * this.zoom;
         if (this.selectedTileX >= 0) {
-            let selH = this.tileMap.getHeight(this.selectedTileX, this.selectedTileY);
-            let sx = Math.round(this.selectedTileX * ts + offsetX);
-            let sy = Math.round(this.selectedTileY * ts + offsetY - selH * hs);
-            let sw = Math.round((this.selectedTileX + 1) * ts + offsetX) - sx;
-            let sh = Math.round((this.selectedTileY + 1) * ts + offsetY - selH * hs) - sy;
-            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rectOutline(sx, sy, sw, sh, new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color(255, 255, 0, 255));
-            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rectOutline(sx + 1, sy + 1, sw - 2, sh - 2, new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color(255, 255, 0, 120));
+            let sx = Math.floor(this.selectedTileX * ts2 + ox2);
+            let sy = Math.floor(this.selectedTileY * ts2 + oy2);
+            let sw2 = Math.floor((this.selectedTileX + 1) * ts2 + ox2) - sx;
+            let sh2 = Math.floor((this.selectedTileY + 1) * ts2 + oy2) - sy;
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rectOutline(sx, sy, sw2, sh2, new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color(255, 255, 0, 255));
         }
         if (this.hoverTileX >= 0) {
-            let hovH = this.tileMap.getHeight(this.hoverTileX, this.hoverTileY);
-            let hx = Math.round(this.hoverTileX * ts + offsetX);
-            let hy = Math.round(this.hoverTileY * ts + offsetY - hovH * hs);
-            let hw = Math.round((this.hoverTileX + 1) * ts + offsetX) - hx;
-            let hh = Math.round((this.hoverTileY + 1) * ts + offsetY - hovH * hs) - hy;
-            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rectOutline(hx, hy, hw, hh, new _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color(255, 255, 255, 200));
+            let mouse = _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.InputManager.getMousePosition();
+            let tileScreenX = Math.floor((mouse.vx - ox2) / ts2) * ts2 + ox2;
+            let tileScreenY = Math.floor((mouse.vy - oy2) / ts2) * ts2 + oy2;
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rect(tileScreenX, tileScreenY, ts2, 2, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white());
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rect(tileScreenX, tileScreenY + ts2 - 2, ts2, 2, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white());
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rect(tileScreenX, tileScreenY, 2, ts2, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white());
+            _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.rect(tileScreenX + ts2 - 2, tileScreenY, 2, ts2, _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Color.white());
         }
-        _BdvEngine__WEBPACK_IMPORTED_MODULE_0__.Draw.flush(shader);
     }
 }
 

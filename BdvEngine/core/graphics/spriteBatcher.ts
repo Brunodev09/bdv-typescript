@@ -77,6 +77,59 @@ export class SpriteBatcher {
   }
 
   /**
+   * Draw a textured quad from a spritesheet.
+   * Use this to render buildings, UI icons, or any sprite from a texture atlas.
+   *
+   * @param material - Material containing the spritesheet texture
+   * @param srcCol - Column in the spritesheet grid (0-indexed)
+   * @param srcRow - Row in the spritesheet grid (0-indexed)
+   * @param gridCols - Total columns in the spritesheet
+   * @param gridRows - Total rows in the spritesheet
+   * @param x - Screen X position
+   * @param y - Screen Y position
+   * @param width - Render width in pixels
+   * @param height - Render height in pixels
+   * @param tint - Optional color tint (default white)
+   */
+  static drawTexture(
+    material: Material,
+    srcCol: number, srcRow: number,
+    gridCols: number, gridRows: number,
+    x: number, y: number,
+    width: number, height: number,
+    tint: Color = Color.white(),
+  ): void {
+    let texture = material.diffTexture;
+    if (!texture) return;
+
+    SpriteBatcher.ensureInit();
+
+    let key = "__default_batch__:" + material.diffTextureName;
+    let batch = SpriteBatcher.batches.get(key);
+    if (!batch) {
+      batch = { verts: [], texture: texture, material: null };
+      SpriteBatcher.batches.set(key, batch);
+    }
+
+    let u0 = srcCol / gridCols;
+    let v0 = srcRow / gridRows;
+    let u1 = (srcCol + 1) / gridCols;
+    let v1 = (srcRow + 1) / gridRows;
+
+    let r = tint.rFloat, g = tint.gFloat, b = tint.bFloat, a = tint.aFloat;
+    let buf = batch.verts;
+
+    buf.push(
+      x,         y,          0, u0, v0, r, g, b, a,
+      x,         y + height, 0, u0, v1, r, g, b, a,
+      x + width, y + height, 0, u1, v1, r, g, b, a,
+      x + width, y + height, 0, u1, v1, r, g, b, a,
+      x + width, y,          0, u1, v0, r, g, b, a,
+      x,         y,          0, u0, v0, r, g, b, a,
+    );
+  }
+
+  /**
    * Submit all batched sprites to the GPU.
    * One draw call per unique texture+shader combination.
    * Called by the engine at the end of the render pass.

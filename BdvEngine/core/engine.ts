@@ -182,8 +182,11 @@ export class Engine {
     this.game.render(this.defaultShader);
     ZoneManager.render(this.defaultShader);
 
-    // Flush batched sprites (1 draw call per texture+shader combo)
+    // Flush batched sprites first (terrain tiles, buildings)
     SpriteBatcher.flush();
+
+    // Flush Draw primitives LAST so highlights/UI render on top
+    Draw.flush(this.defaultShader);
   }
 
   private createFpsOverlay(): void {

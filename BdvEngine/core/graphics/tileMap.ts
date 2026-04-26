@@ -216,7 +216,7 @@ export class TileMap {
     // When step > 1 (zoomed out LOD), iterate every tile but only render
     // LOD-sampled tiles OR important tiles (roads, buildings).
     // At extreme zoom (step >= 8), skip even important tiles — they'd be invisible.
-    let showImportant = hasImportant && step <= 4;
+    let showImportant = hasImportant && step <= 2;
     let iterStep = showImportant ? 1 : step;
     for (let y = startY; y < endY; y += iterStep) {
       for (let x = startX; x < endX; x += iterStep) {
@@ -224,7 +224,15 @@ export class TileMap {
         if (tileIdx < 0) continue;
 
         let onGrid = (x % step === 0) && (y % step === 0);
-        if (!onGrid && !(showImportant && this.importantTiles.has(tileIdx))) continue;
+        let isImportantTile = this.importantTiles.has(tileIdx);
+
+        if (isImportantTile) {
+          // Important tiles: render only when showImportant, skip entirely otherwise
+          if (!showImportant) continue;
+        } else {
+          // Normal tiles: render only when on LOD grid
+          if (!onGrid) continue;
+        }
 
         let uv = activeTileSet.getUV(tileIdx);
         if (!uv) continue;
@@ -256,11 +264,12 @@ export class TileMap {
         let g = baseG * light;
         let b = baseB * light;
 
-        let tileStep = onGrid ? step : 1;
-        let sx = Math.round(x * ts + offsetX);
-        let sy = Math.round(y * ts + offsetY + yOffset);
-        let sx2 = Math.round((x + tileStep) * ts + offsetX);
-        let sy2 = Math.round((y + tileStep) * ts + offsetY + yOffset);
+        let isImportant = this.importantTiles.has(tileIdx);
+        let tileStep = (onGrid && !isImportant) ? step : 1;
+        let sx = Math.floor(x * ts + offsetX);
+        let sy = Math.floor(y * ts + offsetY + yOffset);
+        let sx2 = Math.floor((x + tileStep) * ts + offsetX) + 1;
+        let sy2 = Math.floor((y + tileStep) * ts + offsetY + yOffset) + 1;
 
         // Main tile face
         buf.push(
