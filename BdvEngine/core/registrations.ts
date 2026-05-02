@@ -6,3 +6,4 @@ import './behaviors/statefulAnimationBehavior';
 import './behaviors/rigidBodyBehavior';
 import './behaviors/rayCastBehavior';
 import './components/colliderComponent';
+import './components/audioComponent';

@@ -29,7 +29,7 @@ export { AnimatedSprite } from './core/graphics/animatedSprite';
 export { Texture } from './core/graphics/texture';
 export { TextureManager } from './core/graphics/textureManager';
 export { Draw } from './core/graphics/draw';
-export { SpriteBatcher } from './core/graphics/spriteBatcher';
+export { SpriteBatcher, SpriteLayer } from './core/graphics/spriteBatcher';
 export { ParticleEmitter, ParticleConfig, ParticleShape } from './core/graphics/particleEmitter';
 export { AnimatedEntity } from './core/graphics/animatedEntity';
 export { Material, UniformValue } from './core/graphics/material';
@@ -54,6 +54,18 @@ export { InputManager, Keys, MouseContext } from './core/input/inputManager';
 // Assets
 export { AssetManager, MESSAGE_ASSET_LOADER_LOADED } from './core/assets/assetManager';
 
+// Audio
+export { AudioManager, AudioHandle, PlayOptions } from './core/audio/audioManager';
+export { AudioAsset, AudioAssetLoader } from './core/audio/audioAssetLoader';
+
+// Save
+export {
+  SaveManager,
+  SaveListEntry,
+  MESSAGE_SAVE_WRITTEN,
+  MESSAGE_SAVE_DELETED,
+} from './core/save/saveManager';
+
 // World
 export { SimObject } from './core/world/simObject';
 export { Scene } from './core/world/scene';
@@ -69,6 +81,7 @@ export { ComponentManager } from './core/components/componentManager';
 export { SpriteComponent, SpriteComponentData, SpriteComponentBuilder } from './core/components/spriteComponent';
 export { AnimatedSpriteComponent, AnimatedSpriteComponentData, AnimatedSpriteComponentBuilder } from './core/components/animatedSpriteComponent';
 export { ColliderComponent, ColliderComponentData, ColliderComponentBuilder, ColliderShape } from './core/components/colliderComponent';
+export { AudioComponent, AudioComponentData, AudioComponentBuilder } from './core/components/audioComponent';
 
 // Behaviors
 export { IBehavior } from './core/behaviors/IBehavior';

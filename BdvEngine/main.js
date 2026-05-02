@@ -461,6 +461,8 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _com_message__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../com/message */ "./BdvEngine/core/com/message.ts");
 /* harmony import */ var _imageAssetLoader__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./imageAssetLoader */ "./BdvEngine/core/assets/imageAssetLoader.ts");
 /* harmony import */ var _jsonAssetLoader__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./jsonAssetLoader */ "./BdvEngine/core/assets/jsonAssetLoader.ts");
+/* harmony import */ var _audio_audioAssetLoader__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ../audio/audioAssetLoader */ "./BdvEngine/core/audio/audioAssetLoader.ts");
+
 
 
 
@@ -470,6 +472,7 @@ class AssetManager {
     static init() {
         AssetManager.loaders.push(new _imageAssetLoader__WEBPACK_IMPORTED_MODULE_1__.ImageAssetLoader());
         AssetManager.loaders.push(new _jsonAssetLoader__WEBPACK_IMPORTED_MODULE_2__.JsonAssetLoader());
+        AssetManager.loaders.push(new _audio_audioAssetLoader__WEBPACK_IMPORTED_MODULE_3__.AudioAssetLoader());
     }
     static register(loader) {
         AssetManager.loaders.push(loader);
@@ -588,6 +591,212 @@ class JsonAssetLoader {
         }
     }
 }
+
+
+/***/ },
+
+/***/ "./BdvEngine/core/audio/audioAssetLoader.ts"
+/*!**************************************************!*\
+  !*** ./BdvEngine/core/audio/audioAssetLoader.ts ***!
+  \**************************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   AudioAsset: () => (/* binding */ AudioAsset),
+/* harmony export */   AudioAssetLoader: () => (/* binding */ AudioAssetLoader)
+/* harmony export */ });
+/* harmony import */ var _assets_assetManager__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../assets/assetManager */ "./BdvEngine/core/assets/assetManager.ts");
+/* harmony import */ var _audioManager__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./audioManager */ "./BdvEngine/core/audio/audioManager.ts");
+
+
+class AudioAsset {
+    constructor(name, data) {
+        this.name = name;
+        this.data = data;
+    }
+    get duration() {
+        return this.data.duration;
+    }
+}
+class AudioAssetLoader {
+    get supportedExtensions() {
+        return ["mp3", "wav", "ogg", "m4a"];
+    }
+    loadAsset(assetName) {
+        const request = new XMLHttpRequest();
+        request.open("GET", assetName, true);
+        request.responseType = "arraybuffer";
+        request.addEventListener("load", () => this.onArrayBufferLoaded(assetName, request));
+        request.addEventListener("error", () => {
+            console.error(`AudioAssetLoader::Failed to fetch ${assetName}`);
+        });
+        request.send();
+    }
+    onArrayBufferLoaded(assetName, request) {
+        if (request.status !== 0 && (request.status < 200 || request.status >= 300)) {
+            console.error(`AudioAssetLoader::HTTP ${request.status} for ${assetName}`);
+            return;
+        }
+        _audioManager__WEBPACK_IMPORTED_MODULE_1__.AudioManager.context.decodeAudioData(request.response, (buffer) => {
+            _assets_assetManager__WEBPACK_IMPORTED_MODULE_0__.AssetManager.onLoaded(new AudioAsset(assetName, buffer));
+        }, (err) => {
+            console.error(`AudioAssetLoader::Decode failed for ${assetName}`, err);
+        });
+    }
+}
+
+
+/***/ },
+
+/***/ "./BdvEngine/core/audio/audioManager.ts"
+/*!**********************************************!*\
+  !*** ./BdvEngine/core/audio/audioManager.ts ***!
+  \**********************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   AudioHandle: () => (/* binding */ AudioHandle),
+/* harmony export */   AudioManager: () => (/* binding */ AudioManager)
+/* harmony export */ });
+/* harmony import */ var _assets_assetManager__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../assets/assetManager */ "./BdvEngine/core/assets/assetManager.ts");
+
+class AudioHandle {
+    constructor(source, gain, pan) {
+        this.stopped = false;
+        this.source = source;
+        this.gain = gain;
+        this.pan = pan;
+    }
+    stop() {
+        if (this.stopped)
+            return;
+        this.stopped = true;
+        try {
+            this.source.stop();
+        }
+        catch (e) { }
+    }
+    setVolume(v) {
+        this.gain.gain.value = Math.max(0, v);
+    }
+    setPan(p) {
+        if (this.pan)
+            this.pan.pan.value = Math.max(-1, Math.min(1, p));
+    }
+    setRate(r) {
+        this.source.playbackRate.value = Math.max(0.01, r);
+    }
+}
+class AudioManager {
+    constructor() { }
+    static init() {
+        if (AudioManager.initialized)
+            return;
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) {
+            console.warn("AudioManager::Web Audio API not supported in this browser.");
+            return;
+        }
+        AudioManager._context = new Ctx();
+        AudioManager.masterGain = AudioManager._context.createGain();
+        AudioManager.sfxGain = AudioManager._context.createGain();
+        AudioManager.musicGain = AudioManager._context.createGain();
+        AudioManager.sfxGain.connect(AudioManager.masterGain);
+        AudioManager.musicGain.connect(AudioManager.masterGain);
+        AudioManager.masterGain.connect(AudioManager._context.destination);
+        AudioManager.initialized = true;
+        const resume = () => {
+            if (AudioManager._context && AudioManager._context.state === 'suspended') {
+                AudioManager._context.resume();
+            }
+            window.removeEventListener('click', resume);
+            window.removeEventListener('keydown', resume);
+            window.removeEventListener('touchstart', resume);
+        };
+        window.addEventListener('click', resume);
+        window.addEventListener('keydown', resume);
+        window.addEventListener('touchstart', resume);
+    }
+    static get context() {
+        if (!AudioManager._context)
+            AudioManager.init();
+        return AudioManager._context;
+    }
+    static setMasterVolume(v) {
+        AudioManager.init();
+        AudioManager.masterGain.gain.value = Math.max(0, v);
+    }
+    static setSfxVolume(v) {
+        AudioManager.init();
+        AudioManager.sfxGain.gain.value = Math.max(0, v);
+    }
+    static setMusicVolume(v) {
+        AudioManager.init();
+        AudioManager.musicGain.gain.value = Math.max(0, v);
+    }
+    static play(assetName, options = {}) {
+        var _a, _b, _c;
+        AudioManager.init();
+        const asset = _assets_assetManager__WEBPACK_IMPORTED_MODULE_0__.AssetManager.get(assetName);
+        if (!asset || !(asset.data instanceof AudioBuffer))
+            return null;
+        const ctx = AudioManager._context;
+        const source = ctx.createBufferSource();
+        source.buffer = asset.data;
+        source.loop = (_a = options.loop) !== null && _a !== void 0 ? _a : false;
+        source.playbackRate.value = (_b = options.rate) !== null && _b !== void 0 ? _b : 1;
+        const gain = ctx.createGain();
+        gain.gain.value = (_c = options.volume) !== null && _c !== void 0 ? _c : 1;
+        let panNode = null;
+        let head = source;
+        if (options.pan !== undefined && typeof ctx.createStereoPanner === 'function') {
+            panNode = ctx.createStereoPanner();
+            panNode.pan.value = Math.max(-1, Math.min(1, options.pan));
+            source.connect(panNode);
+            head = panNode;
+        }
+        head.connect(gain);
+        const channelGain = options.channel === 'music' ? AudioManager.musicGain : AudioManager.sfxGain;
+        gain.connect(channelGain);
+        source.start();
+        const handle = new AudioHandle(source, gain, panNode);
+        AudioManager.activeHandles.push(handle);
+        source.onended = () => {
+            handle.stopped = true;
+            const idx = AudioManager.activeHandles.indexOf(handle);
+            if (idx !== -1)
+                AudioManager.activeHandles.splice(idx, 1);
+            if (AudioManager.currentMusic === handle)
+                AudioManager.currentMusic = null;
+        };
+        return handle;
+    }
+    static playMusic(assetName, volume = 1) {
+        if (AudioManager.currentMusic)
+            AudioManager.currentMusic.stop();
+        const handle = AudioManager.play(assetName, { loop: true, volume, channel: 'music' });
+        AudioManager.currentMusic = handle;
+        return handle;
+    }
+    static stopMusic() {
+        if (AudioManager.currentMusic) {
+            AudioManager.currentMusic.stop();
+            AudioManager.currentMusic = null;
+        }
+    }
+    static stopAll() {
+        for (const h of AudioManager.activeHandles.slice())
+            h.stop();
+        AudioManager.activeHandles = [];
+        AudioManager.currentMusic = null;
+    }
+}
+AudioManager._context = null;
+AudioManager.activeHandles = [];
+AudioManager.currentMusic = null;
+AudioManager.initialized = false;
 
 
 /***/ },
@@ -1541,6 +1750,107 @@ _componentManager__WEBPACK_IMPORTED_MODULE_3__.ComponentManager.registerBuilder(
 
 /***/ },
 
+/***/ "./BdvEngine/core/components/audioComponent.ts"
+/*!*****************************************************!*\
+  !*** ./BdvEngine/core/components/audioComponent.ts ***!
+  \*****************************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   AudioComponent: () => (/* binding */ AudioComponent),
+/* harmony export */   AudioComponentBuilder: () => (/* binding */ AudioComponentBuilder),
+/* harmony export */   AudioComponentData: () => (/* binding */ AudioComponentData)
+/* harmony export */ });
+/* harmony import */ var _baseComponent__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./baseComponent */ "./BdvEngine/core/components/baseComponent.ts");
+/* harmony import */ var _componentManager__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./componentManager */ "./BdvEngine/core/components/componentManager.ts");
+/* harmony import */ var _assets_assetManager__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ../assets/assetManager */ "./BdvEngine/core/assets/assetManager.ts");
+/* harmony import */ var _audio_audioManager__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ../audio/audioManager */ "./BdvEngine/core/audio/audioManager.ts");
+
+
+
+
+class AudioComponentData {
+    constructor() {
+        this.volume = 1;
+        this.loop = false;
+        this.autoplay = false;
+        this.channel = 'sfx';
+    }
+    setFromJson(json) {
+        if (json.name !== undefined)
+            this.name = String(json.name);
+        if (json.assetName !== undefined)
+            this.assetName = String(json.assetName);
+        if (json.volume !== undefined)
+            this.volume = Number(json.volume);
+        if (json.loop !== undefined)
+            this.loop = Boolean(json.loop);
+        if (json.autoplay !== undefined)
+            this.autoplay = Boolean(json.autoplay);
+        if (json.channel !== undefined)
+            this.channel = json.channel === 'music' ? 'music' : 'sfx';
+    }
+}
+class AudioComponentBuilder {
+    get type() {
+        return "audio";
+    }
+    buildFromJson(json) {
+        const data = new AudioComponentData();
+        data.setFromJson(json);
+        return new AudioComponent(data);
+    }
+}
+class AudioComponent extends _baseComponent__WEBPACK_IMPORTED_MODULE_0__.BaseComponent {
+    constructor(data) {
+        super(data);
+        this.handle = null;
+        this.assetName = data.assetName;
+        this.volume = data.volume;
+        this.loop = data.loop;
+        this.autoplay = data.autoplay;
+        this.channel = data.channel;
+    }
+    load() {
+        if (!_assets_assetManager__WEBPACK_IMPORTED_MODULE_2__.AssetManager.isLoaded(this.assetName)) {
+            _assets_assetManager__WEBPACK_IMPORTED_MODULE_2__.AssetManager.loadAsset(this.assetName);
+        }
+        if (this.autoplay)
+            this.play();
+    }
+    unload() {
+        this.stop();
+    }
+    play() {
+        this.stop();
+        this.handle = _audio_audioManager__WEBPACK_IMPORTED_MODULE_3__.AudioManager.play(this.assetName, {
+            volume: this.volume,
+            loop: this.loop,
+            channel: this.channel,
+        });
+        return this.handle;
+    }
+    stop() {
+        if (this.handle) {
+            this.handle.stop();
+            this.handle = null;
+        }
+    }
+    setVolume(v) {
+        this.volume = v;
+        if (this.handle)
+            this.handle.setVolume(v);
+    }
+    get isPlaying() {
+        return this.handle !== null && !this.handle.stopped;
+    }
+}
+_componentManager__WEBPACK_IMPORTED_MODULE_1__.ComponentManager.registerBuilder(new AudioComponentBuilder());
+
+
+/***/ },
+
 /***/ "./BdvEngine/core/components/baseComponent.ts"
 /*!****************************************************!*\
   !*** ./BdvEngine/core/components/baseComponent.ts ***!
@@ -2099,15 +2409,22 @@ class Game {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   GLExt: () => (/* binding */ GLExt),
 /* harmony export */   GLUTools: () => (/* binding */ GLUTools),
 /* harmony export */   gl: () => (/* binding */ gl)
 /* harmony export */ });
 let gl;
+class GLExt {
+}
+GLExt.elementIndexUint = null;
+GLExt.vertexArrayObject = null;
 class GLUTools {
     static init(canvas) {
         gl = canvas.getContext("webgl");
         if (!gl)
             throw new Error(`Unable to initialize WebGL.`);
+        GLExt.elementIndexUint = gl.getExtension('OES_element_index_uint');
+        GLExt.vertexArrayObject = gl.getExtension('OES_vertex_array_object');
     }
 }
 
@@ -2494,11 +2811,11 @@ class AnimatedEntity {
             }
         }
     }
-    render(material, x, y, width, height, tint) {
+    render(material, x, y, width, height, tint, layer = _spriteBatcher__WEBPACK_IMPORTED_MODULE_0__.SpriteLayer.Ground, sortY = 0) {
         let state = this.states.get(this.currentState);
         if (!state)
             return;
-        _spriteBatcher__WEBPACK_IMPORTED_MODULE_0__.SpriteBatcher.drawTexture(material, this.currentFrame, state.row, this.gridCols, this.gridRows, x, y, width, height, tint);
+        _spriteBatcher__WEBPACK_IMPORTED_MODULE_0__.SpriteBatcher.drawTexture(material, this.currentFrame, state.row, this.gridCols, this.gridRows, x, y, width, height, tint, layer, sortY);
     }
 }
 
@@ -3350,6 +3667,7 @@ __webpack_require__.r(__webpack_exports__);
 
 class Sprite {
     constructor(name, materialName, width = 100, height = 100) {
+        this.layer = _spriteBatcher__WEBPACK_IMPORTED_MODULE_5__.SpriteLayer.Ground;
         this.vertices = [];
         this.name = name;
         this.width = width;
@@ -3395,7 +3713,9 @@ class Sprite {
         return this.material.hasCustomShader;
     }
     pushToBatch(worldMatrix) {
-        _spriteBatcher__WEBPACK_IMPORTED_MODULE_5__.SpriteBatcher.push(this.vertices, this.material, worldMatrix);
+        let m = worldMatrix.mData;
+        let sortY = this.layer === _spriteBatcher__WEBPACK_IMPORTED_MODULE_5__.SpriteLayer.Object ? m[13] + this.height * m[5] : 0;
+        _spriteBatcher__WEBPACK_IMPORTED_MODULE_5__.SpriteBatcher.push(this.vertices, this.material, worldMatrix, this.layer, sortY);
     }
     update(tick) { }
     render(shader, modelMatrix) {
@@ -3435,7 +3755,8 @@ class Sprite {
 
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
-/* harmony export */   SpriteBatcher: () => (/* binding */ SpriteBatcher)
+/* harmony export */   SpriteBatcher: () => (/* binding */ SpriteBatcher),
+/* harmony export */   SpriteLayer: () => (/* binding */ SpriteLayer)
 /* harmony export */ });
 /* harmony import */ var _gl_gl__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../gl/gl */ "./BdvEngine/core/gl/gl.ts");
 /* harmony import */ var _gl_shader__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../gl/shader */ "./BdvEngine/core/gl/shader.ts");
@@ -3445,108 +3766,245 @@ __webpack_require__.r(__webpack_exports__);
 
 
 
+var SpriteLayer;
+(function (SpriteLayer) {
+    SpriteLayer[SpriteLayer["Ground"] = 0] = "Ground";
+    SpriteLayer[SpriteLayer["Object"] = 1] = "Object";
+    SpriteLayer[SpriteLayer["UI"] = 2] = "UI";
+})(SpriteLayer || (SpriteLayer = {}));
+const FLOATS_PER_VERT = 9;
+const FLOATS_PER_QUAD = 4 * FLOATS_PER_VERT;
 class SpriteBatcher {
     static ensureInit() {
-        if (SpriteBatcher.buffer)
+        if (SpriteBatcher.vbo)
             return;
-        SpriteBatcher.buffer = _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.createBuffer();
+        SpriteBatcher.vbo = _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.createBuffer();
+        SpriteBatcher.ebo = _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.createBuffer();
         SpriteBatcher.batchShader = new BatchSpriteShader();
+        SpriteBatcher.useUint32 = !!_gl_gl__WEBPACK_IMPORTED_MODULE_0__.GLExt.elementIndexUint;
     }
-    static push(vertices, material, worldMatrix) {
+    static push(vertices, material, worldMatrix, layer = SpriteLayer.Ground, sortY = 0) {
         let texture = material.diffTexture;
-        if (!texture)
+        if (!texture || vertices.length < 5)
             return;
         let shaderName = material.hasCustomShader ? material.shader.name : "__default_batch__";
         let key = shaderName + ":" + material.diffTextureName;
-        let batch = SpriteBatcher.batches.get(key);
-        if (!batch) {
-            batch = {
-                verts: [],
-                texture: texture,
-                material: material.hasCustomShader ? material : null,
-            };
-            SpriteBatcher.batches.set(key, batch);
-        }
+        let m = worldMatrix.mData;
         let color = material.diffColor;
         let r = color.rFloat, g = color.gFloat, b = color.bFloat, a = color.aFloat;
-        let m = worldMatrix.mData;
-        let buf = batch.verts;
-        for (let i = 0; i < vertices.length; i++) {
-            let v = vertices[i];
+        let cornerIdx = [0, 1, 2, 4];
+        let quad = new Array(FLOATS_PER_QUAD);
+        for (let i = 0; i < 4; i++) {
+            let v = vertices[cornerIdx[i]];
             let px = v.position.vx, py = v.position.vy, pz = v.position.vz;
             let wx = m[0] * px + m[4] * py + m[8] * pz + m[12];
             let wy = m[1] * px + m[5] * py + m[9] * pz + m[13];
             let wz = m[2] * px + m[6] * py + m[10] * pz + m[14];
-            buf.push(wx, wy, wz, v.texCoords.vx, v.texCoords.vy, r, g, b, a);
+            let o = i * FLOATS_PER_VERT;
+            quad[o + 0] = wx;
+            quad[o + 1] = wy;
+            quad[o + 2] = wz;
+            quad[o + 3] = v.texCoords.vx;
+            quad[o + 4] = v.texCoords.vy;
+            quad[o + 5] = r;
+            quad[o + 6] = g;
+            quad[o + 7] = b;
+            quad[o + 8] = a;
         }
+        SpriteBatcher.emitQuad(quad, key, texture, material.hasCustomShader ? material : null, layer, sortY);
     }
-    static drawTexture(material, srcCol, srcRow, gridCols, gridRows, x, y, width, height, tint = _color__WEBPACK_IMPORTED_MODULE_2__.Color.white()) {
-        let texture = material.diffTexture;
-        if (!texture)
-            return;
-        SpriteBatcher.ensureInit();
-        let key = "__default_batch__:" + material.diffTextureName;
-        let batch = SpriteBatcher.batches.get(key);
-        if (!batch) {
-            batch = { verts: [], texture: texture, material: null };
-            SpriteBatcher.batches.set(key, batch);
-        }
+    static drawTexture(material, srcCol, srcRow, gridCols, gridRows, x, y, width, height, tint = _color__WEBPACK_IMPORTED_MODULE_2__.Color.white(), layer = SpriteLayer.Ground, sortY = 0) {
         let u0 = srcCol / gridCols;
         let v0 = srcRow / gridRows;
         let u1 = (srcCol + 1) / gridCols;
         let v1 = (srcRow + 1) / gridRows;
+        SpriteBatcher.drawTextureUV(material, u0, v0, u1, v1, x, y, width, height, tint, layer, sortY);
+    }
+    static drawTextureUV(material, u0, v0, u1, v1, x, y, width, height, tint = _color__WEBPACK_IMPORTED_MODULE_2__.Color.white(), layer = SpriteLayer.Ground, sortY = 0) {
+        let texture = material.diffTexture;
+        if (!texture)
+            return;
+        let key = "__default_batch__:" + material.diffTextureName;
         let r = tint.rFloat, g = tint.gFloat, b = tint.bFloat, a = tint.aFloat;
-        let buf = batch.verts;
-        buf.push(x, y, 0, u0, v0, r, g, b, a, x, y + height, 0, u0, v1, r, g, b, a, x + width, y + height, 0, u1, v1, r, g, b, a, x + width, y + height, 0, u1, v1, r, g, b, a, x + width, y, 0, u1, v0, r, g, b, a, x, y, 0, u0, v0, r, g, b, a);
+        let x2 = x + width, y2 = y + height;
+        let quad = new Array(FLOATS_PER_QUAD);
+        quad[0] = x;
+        quad[1] = y;
+        quad[2] = 0;
+        quad[3] = u0;
+        quad[4] = v0;
+        quad[5] = r;
+        quad[6] = g;
+        quad[7] = b;
+        quad[8] = a;
+        quad[9] = x;
+        quad[10] = y2;
+        quad[11] = 0;
+        quad[12] = u0;
+        quad[13] = v1;
+        quad[14] = r;
+        quad[15] = g;
+        quad[16] = b;
+        quad[17] = a;
+        quad[18] = x2;
+        quad[19] = y2;
+        quad[20] = 0;
+        quad[21] = u1;
+        quad[22] = v1;
+        quad[23] = r;
+        quad[24] = g;
+        quad[25] = b;
+        quad[26] = a;
+        quad[27] = x2;
+        quad[28] = y;
+        quad[29] = 0;
+        quad[30] = u1;
+        quad[31] = v0;
+        quad[32] = r;
+        quad[33] = g;
+        quad[34] = b;
+        quad[35] = a;
+        SpriteBatcher.emitQuad(quad, key, texture, null, layer, sortY);
+    }
+    static emitQuad(quad, key, texture, material, layer, sortY) {
+        if (layer === SpriteLayer.Object) {
+            SpriteBatcher.objectEntries.push({ sortY, key, texture, material, verts: quad });
+            return;
+        }
+        let dict = layer === SpriteLayer.UI ? SpriteBatcher.uiBatches : SpriteBatcher.groundBatches;
+        let order = layer === SpriteLayer.UI ? SpriteBatcher.uiOrder : SpriteBatcher.groundOrder;
+        let batch = dict.get(key);
+        if (!batch) {
+            batch = { verts: [], indices: [], nextBase: 0, texture, material };
+            dict.set(key, batch);
+            order.push(batch);
+        }
+        SpriteBatcher.appendQuadToBatch(batch, quad);
+    }
+    static appendQuadToBatch(batch, quad) {
+        let v = batch.verts;
+        for (let i = 0; i < FLOATS_PER_QUAD; i++)
+            v.push(quad[i]);
+        let b = batch.nextBase;
+        batch.indices.push(b + 0, b + 1, b + 2, b + 2, b + 3, b + 0);
+        batch.nextBase = b + 4;
     }
     static flush() {
-        if (SpriteBatcher.batches.size === 0)
+        let any = SpriteBatcher.groundOrder.length > 0 ||
+            SpriteBatcher.objectEntries.length > 0 ||
+            SpriteBatcher.uiOrder.length > 0;
+        if (!any)
             return;
         SpriteBatcher.ensureInit();
-        SpriteBatcher.batches.forEach((batch, key) => {
-            if (batch.verts.length === 0)
-                return;
-            let shader;
-            if (batch.material && batch.material.hasCustomShader) {
-                shader = batch.material.shader;
-                shader.use();
-                let projLoc = shader.getUniformLocation("u_proj");
-                _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix4fv(projLoc, false, new Float32Array(_draw__WEBPACK_IMPORTED_MODULE_3__.Draw.getProjection().mData));
-                batch.material.applyUniforms(shader);
-            }
-            else {
-                shader = SpriteBatcher.batchShader;
-                shader.use();
-                let projLoc = shader.getUniformLocation("u_proj");
-                _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix4fv(projLoc, false, new Float32Array(_draw__WEBPACK_IMPORTED_MODULE_3__.Draw.getProjection().mData));
-            }
+        SpriteBatcher.flushBatchList(SpriteBatcher.groundOrder);
+        SpriteBatcher.flushObjectLayer();
+        SpriteBatcher.flushBatchList(SpriteBatcher.uiOrder);
+    }
+    static flushBatchList(order) {
+        for (let i = 0; i < order.length; i++) {
+            let batch = order[i];
+            if (batch.indices.length === 0)
+                continue;
+            let shader = SpriteBatcher.bindShader(batch.material);
             batch.texture.activate(0);
-            let diffLoc = shader.getUniformLocation("u_diffuse");
-            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniform1i(diffLoc, 0);
-            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bindBuffer(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ARRAY_BUFFER, SpriteBatcher.buffer);
-            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bufferData(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ARRAY_BUFFER, new Float32Array(batch.verts), _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.DYNAMIC_DRAW);
-            const stride = 9 * 4;
-            let posLoc = shader.getAttribLocation("a_pos");
-            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.vertexAttribPointer(posLoc, 3, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.FLOAT, false, stride, 0);
-            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.enableVertexAttribArray(posLoc);
-            let texLoc = shader.getAttribLocation("a_textCoord");
-            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.vertexAttribPointer(texLoc, 2, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.FLOAT, false, stride, 3 * 4);
-            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.enableVertexAttribArray(texLoc);
-            let colLoc = shader.getAttribLocation("a_color");
-            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.vertexAttribPointer(colLoc, 4, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.FLOAT, false, stride, 5 * 4);
-            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.enableVertexAttribArray(colLoc);
-            let vertexCount = batch.verts.length / 9;
-            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.drawArrays(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TRIANGLES, 0, vertexCount);
-            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.disableVertexAttribArray(posLoc);
-            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.disableVertexAttribArray(texLoc);
-            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.disableVertexAttribArray(colLoc);
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniform1i(shader.getUniformLocation("u_diffuse"), 0);
+            SpriteBatcher.uploadAndDraw(shader, batch.verts, batch.indices);
             batch.verts.length = 0;
-        });
+            batch.indices.length = 0;
+            batch.nextBase = 0;
+        }
+    }
+    static flushObjectLayer() {
+        let entries = SpriteBatcher.objectEntries;
+        if (entries.length === 0)
+            return;
+        entries.sort((a, b) => a.sortY - b.sortY);
+        let verts = [];
+        let indices = [];
+        let nextBase = 0;
+        let curKey = null;
+        let curTex = null;
+        let curMat = null;
+        for (let i = 0; i < entries.length; i++) {
+            let e = entries[i];
+            if (curKey !== e.key) {
+                if (verts.length > 0) {
+                    let shader = SpriteBatcher.bindShader(curMat);
+                    curTex.activate(0);
+                    _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniform1i(shader.getUniformLocation("u_diffuse"), 0);
+                    SpriteBatcher.uploadAndDraw(shader, verts, indices);
+                    verts = [];
+                    indices = [];
+                    nextBase = 0;
+                }
+                curKey = e.key;
+                curTex = e.texture;
+                curMat = e.material;
+            }
+            for (let j = 0; j < FLOATS_PER_QUAD; j++)
+                verts.push(e.verts[j]);
+            indices.push(nextBase + 0, nextBase + 1, nextBase + 2, nextBase + 2, nextBase + 3, nextBase + 0);
+            nextBase += 4;
+        }
+        if (verts.length > 0) {
+            let shader = SpriteBatcher.bindShader(curMat);
+            curTex.activate(0);
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniform1i(shader.getUniformLocation("u_diffuse"), 0);
+            SpriteBatcher.uploadAndDraw(shader, verts, indices);
+        }
+        entries.length = 0;
+    }
+    static bindShader(material) {
+        let shader;
+        if (material && material.hasCustomShader) {
+            shader = material.shader;
+            shader.use();
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix4fv(shader.getUniformLocation("u_proj"), false, new Float32Array(_draw__WEBPACK_IMPORTED_MODULE_3__.Draw.getProjection().mData));
+            material.applyUniforms(shader);
+        }
+        else {
+            shader = SpriteBatcher.batchShader;
+            shader.use();
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix4fv(shader.getUniformLocation("u_proj"), false, new Float32Array(_draw__WEBPACK_IMPORTED_MODULE_3__.Draw.getProjection().mData));
+        }
+        return shader;
+    }
+    static uploadAndDraw(shader, verts, indices) {
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bindBuffer(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ARRAY_BUFFER, SpriteBatcher.vbo);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bufferData(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ARRAY_BUFFER, new Float32Array(verts), _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.DYNAMIC_DRAW);
+        const stride = FLOATS_PER_VERT * 4;
+        let posLoc = shader.getAttribLocation("a_pos");
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.vertexAttribPointer(posLoc, 3, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.FLOAT, false, stride, 0);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.enableVertexAttribArray(posLoc);
+        let texLoc = shader.getAttribLocation("a_textCoord");
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.vertexAttribPointer(texLoc, 2, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.FLOAT, false, stride, 3 * 4);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.enableVertexAttribArray(texLoc);
+        let colLoc = shader.getAttribLocation("a_color");
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.vertexAttribPointer(colLoc, 4, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.FLOAT, false, stride, 5 * 4);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.enableVertexAttribArray(colLoc);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bindBuffer(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ELEMENT_ARRAY_BUFFER, SpriteBatcher.ebo);
+        if (SpriteBatcher.useUint32) {
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bufferData(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(indices), _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.DYNAMIC_DRAW);
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.drawElements(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TRIANGLES, indices.length, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.UNSIGNED_INT, 0);
+        }
+        else {
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bufferData(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.DYNAMIC_DRAW);
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.drawElements(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TRIANGLES, indices.length, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.UNSIGNED_SHORT, 0);
+        }
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.disableVertexAttribArray(posLoc);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.disableVertexAttribArray(texLoc);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.disableVertexAttribArray(colLoc);
     }
 }
-SpriteBatcher.batches = new Map();
-SpriteBatcher.buffer = null;
+SpriteBatcher.groundBatches = new Map();
+SpriteBatcher.groundOrder = [];
+SpriteBatcher.uiBatches = new Map();
+SpriteBatcher.uiOrder = [];
+SpriteBatcher.objectEntries = [];
+SpriteBatcher.vbo = null;
+SpriteBatcher.ebo = null;
 SpriteBatcher.batchShader = null;
+SpriteBatcher.useUint32 = false;
 class BatchSpriteShader extends _gl_shader__WEBPACK_IMPORTED_MODULE_1__.Shader {
     constructor() {
         super("batch_sprite");
@@ -3755,10 +4213,12 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   TileSet: () => (/* binding */ TileSet)
 /* harmony export */ });
 /* harmony import */ var _gl_gl__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../gl/gl */ "./BdvEngine/core/gl/gl.ts");
-/* harmony import */ var _color__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./color */ "./BdvEngine/core/graphics/color.ts");
-/* harmony import */ var _spriteBatcher__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./spriteBatcher */ "./BdvEngine/core/graphics/spriteBatcher.ts");
-/* harmony import */ var _material__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./material */ "./BdvEngine/core/graphics/material.ts");
-/* harmony import */ var _materialManager__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./materialManager */ "./BdvEngine/core/graphics/materialManager.ts");
+/* harmony import */ var _gl_shader__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../gl/shader */ "./BdvEngine/core/gl/shader.ts");
+/* harmony import */ var _color__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./color */ "./BdvEngine/core/graphics/color.ts");
+/* harmony import */ var _draw__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./draw */ "./BdvEngine/core/graphics/draw.ts");
+/* harmony import */ var _material__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./material */ "./BdvEngine/core/graphics/material.ts");
+/* harmony import */ var _materialManager__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./materialManager */ "./BdvEngine/core/graphics/materialManager.ts");
+
 
 
 
@@ -3773,8 +4233,8 @@ class TileSet {
         this.filtering = 'nearest';
         this.tileWidth = config.tileWidth;
         this.tileHeight = config.tileHeight;
-        this.material = new _material__WEBPACK_IMPORTED_MODULE_3__.Material(config.materialName, config.imagePath, _color__WEBPACK_IMPORTED_MODULE_1__.Color.white());
-        _materialManager__WEBPACK_IMPORTED_MODULE_4__.MaterialManager.register(this.material);
+        this.material = new _material__WEBPACK_IMPORTED_MODULE_4__.Material(config.materialName, config.imagePath, _color__WEBPACK_IMPORTED_MODULE_2__.Color.white());
+        _materialManager__WEBPACK_IMPORTED_MODULE_5__.MaterialManager.register(this.material);
     }
     computeUVs() {
         if (this.ready)
@@ -3806,6 +4266,8 @@ class TileSet {
     }
     get tileCount() { return this.uvs.length; }
     get isReady() { return this.ready; }
+    get colCount() { return this.cols; }
+    get rowCount() { return this.rows; }
     getUV(tileIndex) {
         if (tileIndex < 0 || tileIndex >= this.uvs.length)
             return null;
@@ -3814,11 +4276,12 @@ class TileSet {
 }
 class TileMap {
     constructor(tileSet, mapWidth, mapHeight, renderTileSize = 16) {
-        this.heightScale = 6;
-        this.shadowStrength = 0.45;
         this.lodTileSet = null;
         this.lodThreshold = 6;
+        this.heightScale = 6;
+        this.shadowStrength = 0.45;
         this.importantTiles = new Set();
+        this.lodChunks = null;
         this.tileSet = tileSet;
         this.mapWidth = mapWidth;
         this.mapHeight = mapHeight;
@@ -3826,11 +4289,25 @@ class TileMap {
         this.tiles = new Int16Array(mapWidth * mapHeight);
         this.tiles.fill(-1);
         this.heights = new Float32Array(mapWidth * mapHeight);
+        this.chunksX = Math.ceil(mapWidth / TileMap.CHUNK_SIZE);
+        this.chunksY = Math.ceil(mapHeight / TileMap.CHUNK_SIZE);
+        this.chunks = new Array(this.chunksX * this.chunksY);
+        for (let cy = 0; cy < this.chunksY; cy++) {
+            for (let cx = 0; cx < this.chunksX; cx++) {
+                this.chunks[cy * this.chunksX + cx] = new TileChunk(cx, cy);
+            }
+        }
     }
     setTile(x, y, tileIndex) {
         if (x < 0 || x >= this.mapWidth || y < 0 || y >= this.mapHeight)
             return;
         this.tiles[y * this.mapWidth + x] = tileIndex;
+        let cx = Math.floor(x / TileMap.CHUNK_SIZE);
+        let cy = Math.floor(y / TileMap.CHUNK_SIZE);
+        let i = cy * this.chunksX + cx;
+        this.chunks[i].markDirty();
+        if (this.lodChunks)
+            this.lodChunks[i].markDirty();
     }
     getTile(x, y) {
         if (x < 0 || x >= this.mapWidth || y < 0 || y >= this.mapHeight)
@@ -3847,7 +4324,14 @@ class TileMap {
             return 0;
         return this.heights[y * this.mapWidth + x];
     }
-    fill(tileIndex) { this.tiles.fill(tileIndex); }
+    fill(tileIndex) {
+        this.tiles.fill(tileIndex);
+        for (let c of this.chunks)
+            c.markDirty();
+        if (this.lodChunks)
+            for (let c of this.lodChunks)
+                c.markDirty();
+    }
     get width() { return this.mapWidth; }
     get height() { return this.mapHeight; }
     get tileSize() { return this.renderTileSize; }
@@ -3857,79 +4341,173 @@ class TileMap {
         let ts = this.renderTileSize;
         let zoom = camera.zoom;
         let screenTs = ts * zoom;
-        let useLod = this.lodTileSet && screenTs < this.lodThreshold;
-        let activeTileSet = useLod ? this.lodTileSet : this.tileSet;
-        if (useLod && !activeTileSet.computeUVs()) {
-            activeTileSet = this.tileSet;
+        let activeSet = this.tileSet;
+        let activeChunks = this.chunks;
+        if (this.lodTileSet && screenTs < this.lodThreshold && this.lodTileSet.computeUVs()) {
+            activeSet = this.lodTileSet;
+            if (!this.lodChunks)
+                this.lodChunks = this.buildChunkArray();
+            activeChunks = this.lodChunks;
         }
-        let step = 1;
-        if (screenTs < 4)
-            step = 8;
-        else if (screenTs < 6)
-            step = 4;
-        else if (screenTs < 10)
-            step = 2;
         let halfW = screenW / 2 / zoom;
         let halfH = screenH / 2 / zoom;
-        let camTX = camera.x / ts;
-        let camTY = camera.y / ts;
-        let margin = 2;
-        let startX = Math.max(0, Math.floor(camTX - halfW / ts) - 1);
-        let startY = Math.max(0, Math.floor(camTY - halfH / ts) - margin);
-        let endX = Math.min(this.mapWidth, Math.ceil(camTX + halfW / ts) + 1);
-        let endY = Math.min(this.mapHeight, Math.ceil(camTY + halfH / ts) + 2);
-        startX = Math.floor(startX / step) * step;
-        startY = Math.floor(startY / step) * step;
-        let mat = activeTileSet.material;
-        let baseR = mat.diffColor.rFloat;
-        let baseG = mat.diffColor.gFloat;
-        let baseB = mat.diffColor.bFloat;
-        let baseA = mat.diffColor.aFloat;
-        let texture = mat.diffTexture;
-        if (!texture)
-            return;
-        let key = "__default_batch__:" + mat.diffTextureName;
-        let batches = _spriteBatcher__WEBPACK_IMPORTED_MODULE_2__.SpriteBatcher.batches;
-        if (!batches) {
-            _spriteBatcher__WEBPACK_IMPORTED_MODULE_2__.SpriteBatcher.ensureInit();
-            batches = _spriteBatcher__WEBPACK_IMPORTED_MODULE_2__.SpriteBatcher.batches;
-        }
-        let batchEntry = batches.get(key);
-        if (!batchEntry) {
-            batchEntry = { verts: [], texture: texture, material: null };
-            batches.set(key, batchEntry);
-        }
-        let buf = batchEntry.verts;
-        let hasImportant = this.importantTiles.size > 0 && step > 1;
-        let showImportant = hasImportant && step <= 2;
-        let iterStep = showImportant ? 1 : step;
-        for (let y = startY; y < endY; y += iterStep) {
-            for (let x = startX; x < endX; x += iterStep) {
-                let tileIdx = this.tiles[y * this.mapWidth + x];
-                if (tileIdx < 0)
-                    continue;
-                let onGrid = (x % step === 0) && (y % step === 0);
-                let isImportantTile = this.importantTiles.has(tileIdx);
-                if (isImportantTile) {
-                    if (!showImportant)
-                        continue;
+        let minX = camera.x - halfW, minY = camera.y - halfH;
+        let maxX = camera.x + halfW, maxY = camera.y + halfH;
+        let chunkPx = TileMap.CHUNK_SIZE * ts;
+        let cMinX = Math.max(0, Math.floor(minX / chunkPx));
+        let cMinY = Math.max(0, Math.floor(minY / chunkPx));
+        let cMaxX = Math.min(this.chunksX, Math.ceil(maxX / chunkPx));
+        let cMaxY = Math.min(this.chunksY, Math.ceil(maxY / chunkPx));
+        let shader = TileChunk.getShader();
+        shader.use();
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniformMatrix4fv(shader.getUniformLocation("u_proj"), false, new Float32Array(_draw__WEBPACK_IMPORTED_MODULE_3__.Draw.getProjection().mData));
+        let texture = activeSet.material.diffTexture;
+        texture.activate(0);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.uniform1i(shader.getUniformLocation("u_diffuse"), 0);
+        for (let cy = cMinY; cy < cMaxY; cy++) {
+            for (let cx = cMinX; cx < cMaxX; cx++) {
+                let chunk = activeChunks[cy * this.chunksX + cx];
+                if (chunk.dirty) {
+                    chunk.bake(this.tiles, this.mapWidth, this.mapHeight, ts, activeSet);
                 }
-                else {
-                    if (!onGrid)
-                        continue;
-                }
-                let uv = activeTileSet.getUV(tileIdx);
-                if (!uv)
-                    continue;
-                let r = baseR, g = baseG, b = baseB;
-                let tileStep = (onGrid && !isImportantTile) ? step : 1;
-                let wx = x * ts;
-                let wy = y * ts;
-                let wx2 = (x + tileStep) * ts;
-                let wy2 = (y + tileStep) * ts;
-                buf.push(wx, wy, 0, uv.u0, uv.v0, r, g, b, baseA, wx, wy2, 0, uv.u0, uv.v1, r, g, b, baseA, wx2, wy2, 0, uv.u1, uv.v1, r, g, b, baseA, wx2, wy2, 0, uv.u1, uv.v1, r, g, b, baseA, wx2, wy, 0, uv.u1, uv.v0, r, g, b, baseA, wx, wy, 0, uv.u0, uv.v0, r, g, b, baseA);
+                chunk.draw(shader);
             }
         }
+    }
+    buildChunkArray() {
+        let arr = new Array(this.chunksX * this.chunksY);
+        for (let cy = 0; cy < this.chunksY; cy++) {
+            for (let cx = 0; cx < this.chunksX; cx++) {
+                arr[cy * this.chunksX + cx] = new TileChunk(cx, cy);
+            }
+        }
+        return arr;
+    }
+    dispose() {
+        for (let c of this.chunks)
+            c.dispose();
+        if (this.lodChunks)
+            for (let c of this.lodChunks)
+                c.dispose();
+    }
+}
+TileMap.CHUNK_SIZE = 64;
+class TileChunk {
+    static getShader() {
+        if (!TileChunk.shader)
+            TileChunk.shader = new TileChunkShader();
+        return TileChunk.shader;
+    }
+    constructor(cx, cy) {
+        this.vbo = null;
+        this.ebo = null;
+        this.indexCount = 0;
+        this.initialized = false;
+        this.dirty = true;
+        this.chunkX = cx;
+        this.chunkY = cy;
+    }
+    markDirty() { this.dirty = true; }
+    bake(tiles, mapW, mapH, tileSize, set) {
+        if (!this.initialized) {
+            this.vbo = _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.createBuffer();
+            this.ebo = _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.createBuffer();
+            this.initialized = true;
+        }
+        let baseX = this.chunkX * TileMap.CHUNK_SIZE;
+        let baseY = this.chunkY * TileMap.CHUNK_SIZE;
+        let endX = Math.min(baseX + TileMap.CHUNK_SIZE, mapW);
+        let endY = Math.min(baseY + TileMap.CHUNK_SIZE, mapH);
+        let verts = [];
+        let indices = [];
+        let quad = 0;
+        const r = 1, g = 1, b = 1, a = 1;
+        for (let y = baseY; y < endY; y++) {
+            for (let x = baseX; x < endX; x++) {
+                let tileIdx = tiles[y * mapW + x];
+                if (tileIdx < 0)
+                    continue;
+                let uv = set.getUV(tileIdx);
+                if (!uv)
+                    continue;
+                let x1 = x * tileSize, y1 = y * tileSize;
+                let x2 = x1 + tileSize, y2 = y1 + tileSize;
+                verts.push(x1, y1, 0, uv.u0, uv.v0, r, g, b, a, x1, y2, 0, uv.u0, uv.v1, r, g, b, a, x2, y2, 0, uv.u1, uv.v1, r, g, b, a, x2, y1, 0, uv.u1, uv.v0, r, g, b, a);
+                let v0i = quad * 4;
+                indices.push(v0i + 0, v0i + 1, v0i + 2, v0i + 2, v0i + 3, v0i + 0);
+                quad++;
+            }
+        }
+        this.indexCount = indices.length;
+        if (verts.length > 0) {
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bindBuffer(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ARRAY_BUFFER, this.vbo);
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bufferData(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ARRAY_BUFFER, new Float32Array(verts), _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.STATIC_DRAW);
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bindBuffer(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ELEMENT_ARRAY_BUFFER, this.ebo);
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bufferData(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.STATIC_DRAW);
+        }
+        this.dirty = false;
+    }
+    draw(shader) {
+        if (this.indexCount === 0 || !this.initialized)
+            return;
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bindBuffer(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ARRAY_BUFFER, this.vbo);
+        const stride = 9 * 4;
+        let posLoc = shader.getAttribLocation("a_pos");
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.vertexAttribPointer(posLoc, 3, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.FLOAT, false, stride, 0);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.enableVertexAttribArray(posLoc);
+        let texLoc = shader.getAttribLocation("a_textCoord");
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.vertexAttribPointer(texLoc, 2, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.FLOAT, false, stride, 3 * 4);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.enableVertexAttribArray(texLoc);
+        let colLoc = shader.getAttribLocation("a_color");
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.vertexAttribPointer(colLoc, 4, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.FLOAT, false, stride, 5 * 4);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.enableVertexAttribArray(colLoc);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.bindBuffer(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.ELEMENT_ARRAY_BUFFER, this.ebo);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.drawElements(_gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.TRIANGLES, this.indexCount, _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.UNSIGNED_SHORT, 0);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.disableVertexAttribArray(posLoc);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.disableVertexAttribArray(texLoc);
+        _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.disableVertexAttribArray(colLoc);
+    }
+    dispose() {
+        if (!this.initialized)
+            return;
+        if (this.vbo)
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.deleteBuffer(this.vbo);
+        if (this.ebo)
+            _gl_gl__WEBPACK_IMPORTED_MODULE_0__.gl.deleteBuffer(this.ebo);
+        this.vbo = null;
+        this.ebo = null;
+        this.initialized = false;
+    }
+}
+TileChunk.shader = null;
+class TileChunkShader extends _gl_shader__WEBPACK_IMPORTED_MODULE_1__.Shader {
+    constructor() {
+        super("tile_chunk");
+        this.load(this.vertSrc(), this.fragSrc());
+    }
+    vertSrc() {
+        return `
+      attribute vec3 a_pos;
+      attribute vec2 a_textCoord;
+      attribute vec4 a_color;
+      uniform mat4 u_proj;
+      varying vec2 v_textCoord;
+      varying vec4 v_color;
+      void main() {
+        gl_Position = u_proj * vec4(a_pos, 1.0);
+        v_textCoord = a_textCoord;
+        v_color = a_color;
+      }`;
+    }
+    fragSrc() {
+        return `
+      precision mediump float;
+      uniform sampler2D u_diffuse;
+      varying vec2 v_textCoord;
+      varying vec4 v_color;
+      void main() {
+        gl_FragColor = v_color * texture2D(u_diffuse, v_textCoord);
+      }`;
     }
 }
 
@@ -4107,6 +4685,7 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _behaviors_rigidBodyBehavior__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./behaviors/rigidBodyBehavior */ "./BdvEngine/core/behaviors/rigidBodyBehavior.ts");
 /* harmony import */ var _behaviors_rayCastBehavior__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./behaviors/rayCastBehavior */ "./BdvEngine/core/behaviors/rayCastBehavior.ts");
 /* harmony import */ var _components_colliderComponent__WEBPACK_IMPORTED_MODULE_7__ = __webpack_require__(/*! ./components/colliderComponent */ "./BdvEngine/core/components/colliderComponent.ts");
+/* harmony import */ var _components_audioComponent__WEBPACK_IMPORTED_MODULE_8__ = __webpack_require__(/*! ./components/audioComponent */ "./BdvEngine/core/components/audioComponent.ts");
 
 
 
@@ -4115,6 +4694,123 @@ __webpack_require__.r(__webpack_exports__);
 
 
 
+
+
+
+/***/ },
+
+/***/ "./BdvEngine/core/save/saveManager.ts"
+/*!********************************************!*\
+  !*** ./BdvEngine/core/save/saveManager.ts ***!
+  \********************************************/
+(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   MESSAGE_SAVE_DELETED: () => (/* binding */ MESSAGE_SAVE_DELETED),
+/* harmony export */   MESSAGE_SAVE_WRITTEN: () => (/* binding */ MESSAGE_SAVE_WRITTEN),
+/* harmony export */   SaveManager: () => (/* binding */ SaveManager)
+/* harmony export */ });
+/* harmony import */ var _com_message__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../com/message */ "./BdvEngine/core/com/message.ts");
+
+const MESSAGE_SAVE_WRITTEN = "MESSAGE_SAVE_WRITTEN";
+const MESSAGE_SAVE_DELETED = "MESSAGE_SAVE_DELETED";
+class SaveManager {
+    constructor() { }
+    static init(dbName) {
+        if (dbName !== undefined && dbName !== SaveManager.dbName) {
+            SaveManager.close();
+            SaveManager.dbName = dbName;
+        }
+        return SaveManager.open();
+    }
+    static save(slot, data) {
+        const serialized = JSON.stringify(data);
+        const record = {
+            slot,
+            timestamp: Date.now(),
+            size: serialized.length,
+            data: serialized,
+        };
+        return SaveManager.run("readwrite", (store) => store.put(record))
+            .then(() => {
+            _com_message__WEBPACK_IMPORTED_MODULE_0__.Message.send(MESSAGE_SAVE_WRITTEN, SaveManager, { slot, size: record.size });
+        });
+    }
+    static load(slot) {
+        return SaveManager.run("readonly", (store) => store.get(slot))
+            .then((record) => {
+            if (!record)
+                return null;
+            return JSON.parse(record.data);
+        });
+    }
+    static exists(slot) {
+        return SaveManager.run("readonly", (store) => store.count(slot))
+            .then((count) => count > 0);
+    }
+    static delete(slot) {
+        return SaveManager.run("readwrite", (store) => store.delete(slot))
+            .then(() => {
+            _com_message__WEBPACK_IMPORTED_MODULE_0__.Message.send(MESSAGE_SAVE_DELETED, SaveManager, { slot });
+        });
+    }
+    static list() {
+        return SaveManager.run("readonly", (store) => store.getAll())
+            .then((records) => records
+            .map((r) => ({ slot: r.slot, timestamp: r.timestamp, size: r.size }))
+            .sort((a, b) => b.timestamp - a.timestamp));
+    }
+    static clear() {
+        return SaveManager.run("readwrite", (store) => store.clear()).then(() => { });
+    }
+    static close() {
+        if (SaveManager.db) {
+            SaveManager.db.close();
+            SaveManager.db = null;
+        }
+        SaveManager.openPromise = null;
+    }
+    static open() {
+        if (SaveManager.db)
+            return Promise.resolve(SaveManager.db);
+        if (SaveManager.openPromise)
+            return SaveManager.openPromise;
+        SaveManager.openPromise = new Promise((resolve, reject) => {
+            const request = indexedDB.open(SaveManager.dbName, 1);
+            request.onupgradeneeded = () => {
+                const db = request.result;
+                if (!db.objectStoreNames.contains(SaveManager.storeName)) {
+                    db.createObjectStore(SaveManager.storeName, { keyPath: "slot" });
+                }
+            };
+            request.onsuccess = () => {
+                SaveManager.db = request.result;
+                SaveManager.db.onclose = () => {
+                    SaveManager.db = null;
+                    SaveManager.openPromise = null;
+                };
+                resolve(SaveManager.db);
+            };
+            request.onerror = () => reject(request.error);
+            request.onblocked = () => reject(new Error("SaveManager::IndexedDB open blocked."));
+        });
+        return SaveManager.openPromise;
+    }
+    static run(mode, op) {
+        return SaveManager.open().then((db) => new Promise((resolve, reject) => {
+            const tx = db.transaction(SaveManager.storeName, mode);
+            const store = tx.objectStore(SaveManager.storeName);
+            const req = op(store);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        }));
+    }
+}
+SaveManager.dbName = "BdvEngineSaves";
+SaveManager.storeName = "saves";
+SaveManager.db = null;
+SaveManager.openPromise = null;
 
 
 /***/ },
@@ -5225,21 +5921,28 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
 /* harmony export */   AnimatedEntity: () => (/* reexport safe */ _core_graphics_animatedEntity__WEBPACK_IMPORTED_MODULE_24__.AnimatedEntity),
 /* harmony export */   AnimatedSprite: () => (/* reexport safe */ _core_graphics_animatedSprite__WEBPACK_IMPORTED_MODULE_18__.AnimatedSprite),
-/* harmony export */   AnimatedSpriteComponent: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_44__.AnimatedSpriteComponent),
-/* harmony export */   AnimatedSpriteComponentBuilder: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_44__.AnimatedSpriteComponentBuilder),
-/* harmony export */   AnimatedSpriteComponentData: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_44__.AnimatedSpriteComponentData),
+/* harmony export */   AnimatedSpriteComponent: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_47__.AnimatedSpriteComponent),
+/* harmony export */   AnimatedSpriteComponentBuilder: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_47__.AnimatedSpriteComponentBuilder),
+/* harmony export */   AnimatedSpriteComponentData: () => (/* reexport safe */ _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_47__.AnimatedSpriteComponentData),
 /* harmony export */   AssetManager: () => (/* reexport safe */ _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_36__.AssetManager),
-/* harmony export */   BaseBehavior: () => (/* reexport safe */ _core_behaviors_baseBehavior__WEBPACK_IMPORTED_MODULE_46__.BaseBehavior),
-/* harmony export */   BaseComponent: () => (/* reexport safe */ _core_components_baseComponent__WEBPACK_IMPORTED_MODULE_41__.BaseComponent),
-/* harmony export */   BehaviorManager: () => (/* reexport safe */ _core_behaviors_behaviorManager__WEBPACK_IMPORTED_MODULE_47__.BehaviorManager),
+/* harmony export */   AudioAsset: () => (/* reexport safe */ _core_audio_audioAssetLoader__WEBPACK_IMPORTED_MODULE_38__.AudioAsset),
+/* harmony export */   AudioAssetLoader: () => (/* reexport safe */ _core_audio_audioAssetLoader__WEBPACK_IMPORTED_MODULE_38__.AudioAssetLoader),
+/* harmony export */   AudioComponent: () => (/* reexport safe */ _core_components_audioComponent__WEBPACK_IMPORTED_MODULE_49__.AudioComponent),
+/* harmony export */   AudioComponentBuilder: () => (/* reexport safe */ _core_components_audioComponent__WEBPACK_IMPORTED_MODULE_49__.AudioComponentBuilder),
+/* harmony export */   AudioComponentData: () => (/* reexport safe */ _core_components_audioComponent__WEBPACK_IMPORTED_MODULE_49__.AudioComponentData),
+/* harmony export */   AudioHandle: () => (/* reexport safe */ _core_audio_audioManager__WEBPACK_IMPORTED_MODULE_37__.AudioHandle),
+/* harmony export */   AudioManager: () => (/* reexport safe */ _core_audio_audioManager__WEBPACK_IMPORTED_MODULE_37__.AudioManager),
+/* harmony export */   BaseBehavior: () => (/* reexport safe */ _core_behaviors_baseBehavior__WEBPACK_IMPORTED_MODULE_50__.BaseBehavior),
+/* harmony export */   BaseComponent: () => (/* reexport safe */ _core_components_baseComponent__WEBPACK_IMPORTED_MODULE_44__.BaseComponent),
+/* harmony export */   BehaviorManager: () => (/* reexport safe */ _core_behaviors_behaviorManager__WEBPACK_IMPORTED_MODULE_51__.BehaviorManager),
 /* harmony export */   Camera: () => (/* reexport safe */ _core_3d_camera__WEBPACK_IMPORTED_MODULE_5__.Camera),
 /* harmony export */   Camera2D: () => (/* reexport safe */ _core_camera2d__WEBPACK_IMPORTED_MODULE_2__.Camera2D),
-/* harmony export */   ColliderComponent: () => (/* reexport safe */ _core_components_colliderComponent__WEBPACK_IMPORTED_MODULE_45__.ColliderComponent),
-/* harmony export */   ColliderComponentBuilder: () => (/* reexport safe */ _core_components_colliderComponent__WEBPACK_IMPORTED_MODULE_45__.ColliderComponentBuilder),
-/* harmony export */   ColliderComponentData: () => (/* reexport safe */ _core_components_colliderComponent__WEBPACK_IMPORTED_MODULE_45__.ColliderComponentData),
+/* harmony export */   ColliderComponent: () => (/* reexport safe */ _core_components_colliderComponent__WEBPACK_IMPORTED_MODULE_48__.ColliderComponent),
+/* harmony export */   ColliderComponentBuilder: () => (/* reexport safe */ _core_components_colliderComponent__WEBPACK_IMPORTED_MODULE_48__.ColliderComponentBuilder),
+/* harmony export */   ColliderComponentData: () => (/* reexport safe */ _core_components_colliderComponent__WEBPACK_IMPORTED_MODULE_48__.ColliderComponentData),
 /* harmony export */   Collision: () => (/* reexport safe */ _core_utils_collision__WEBPACK_IMPORTED_MODULE_32__.Collision),
 /* harmony export */   Color: () => (/* reexport safe */ _core_graphics_color__WEBPACK_IMPORTED_MODULE_15__.Color),
-/* harmony export */   ComponentManager: () => (/* reexport safe */ _core_components_componentManager__WEBPACK_IMPORTED_MODULE_42__.ComponentManager),
+/* harmony export */   ComponentManager: () => (/* reexport safe */ _core_components_componentManager__WEBPACK_IMPORTED_MODULE_45__.ComponentManager),
 /* harmony export */   DefaultShader: () => (/* reexport safe */ _core_gl_shaders_defaultShader__WEBPACK_IMPORTED_MODULE_12__.DefaultShader),
 /* harmony export */   Draw: () => (/* reexport safe */ _core_graphics_draw__WEBPACK_IMPORTED_MODULE_21__.Draw),
 /* harmony export */   Engine: () => (/* reexport safe */ _core_engine__WEBPACK_IMPORTED_MODULE_1__.Engine),
@@ -5248,12 +5951,14 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   GLUTools: () => (/* reexport safe */ _core_gl_gl__WEBPACK_IMPORTED_MODULE_10__.GLUTools),
 /* harmony export */   Game: () => (/* reexport safe */ _core_game__WEBPACK_IMPORTED_MODULE_0__.Game),
 /* harmony export */   InputManager: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_35__.InputManager),
-/* harmony export */   KeyboardMovementBehavior: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_48__.KeyboardMovementBehavior),
-/* harmony export */   KeyboardMovementBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_48__.KeyboardMovementBehaviorBuilder),
-/* harmony export */   KeyboardMovementBehaviorData: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_48__.KeyboardMovementBehaviorData),
+/* harmony export */   KeyboardMovementBehavior: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_52__.KeyboardMovementBehavior),
+/* harmony export */   KeyboardMovementBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_52__.KeyboardMovementBehaviorBuilder),
+/* harmony export */   KeyboardMovementBehaviorData: () => (/* reexport safe */ _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_52__.KeyboardMovementBehaviorData),
 /* harmony export */   Keys: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_35__.Keys),
 /* harmony export */   LitShader: () => (/* reexport safe */ _core_3d_litShader__WEBPACK_IMPORTED_MODULE_8__.LitShader),
 /* harmony export */   MESSAGE_ASSET_LOADER_LOADED: () => (/* reexport safe */ _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_36__.MESSAGE_ASSET_LOADER_LOADED),
+/* harmony export */   MESSAGE_SAVE_DELETED: () => (/* reexport safe */ _core_save_saveManager__WEBPACK_IMPORTED_MODULE_39__.MESSAGE_SAVE_DELETED),
+/* harmony export */   MESSAGE_SAVE_WRITTEN: () => (/* reexport safe */ _core_save_saveManager__WEBPACK_IMPORTED_MODULE_39__.MESSAGE_SAVE_WRITTEN),
 /* harmony export */   Material: () => (/* reexport safe */ _core_graphics_material__WEBPACK_IMPORTED_MODULE_25__.Material),
 /* harmony export */   MaterialManager: () => (/* reexport safe */ _core_graphics_materialManager__WEBPACK_IMPORTED_MODULE_27__.MaterialManager),
 /* harmony export */   Mesh: () => (/* reexport safe */ _core_3d_mesh__WEBPACK_IMPORTED_MODULE_6__.Mesh),
@@ -5265,35 +5970,37 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony export */   MouseContext: () => (/* reexport safe */ _core_input_inputManager__WEBPACK_IMPORTED_MODULE_35__.MouseContext),
 /* harmony export */   ObjLoader: () => (/* reexport safe */ _core_3d_objLoader__WEBPACK_IMPORTED_MODULE_7__.ObjLoader),
 /* harmony export */   ParticleEmitter: () => (/* reexport safe */ _core_graphics_particleEmitter__WEBPACK_IMPORTED_MODULE_23__.ParticleEmitter),
-/* harmony export */   RayCastBehavior: () => (/* reexport safe */ _core_behaviors_rayCastBehavior__WEBPACK_IMPORTED_MODULE_52__.RayCastBehavior),
-/* harmony export */   RayCastBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_rayCastBehavior__WEBPACK_IMPORTED_MODULE_52__.RayCastBehaviorBuilder),
-/* harmony export */   RayCastBehaviorData: () => (/* reexport safe */ _core_behaviors_rayCastBehavior__WEBPACK_IMPORTED_MODULE_52__.RayCastBehaviorData),
-/* harmony export */   RigidBodyBehavior: () => (/* reexport safe */ _core_behaviors_rigidBodyBehavior__WEBPACK_IMPORTED_MODULE_51__.RigidBodyBehavior),
-/* harmony export */   RigidBodyBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_rigidBodyBehavior__WEBPACK_IMPORTED_MODULE_51__.RigidBodyBehaviorBuilder),
-/* harmony export */   RigidBodyBehaviorData: () => (/* reexport safe */ _core_behaviors_rigidBodyBehavior__WEBPACK_IMPORTED_MODULE_51__.RigidBodyBehaviorData),
-/* harmony export */   RotationBehavior: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_49__.RotationBehavior),
-/* harmony export */   RotationBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_49__.RotationBehaviorBuilder),
-/* harmony export */   RotationBehaviorData: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_49__.RotationBehaviorData),
-/* harmony export */   Scene: () => (/* reexport safe */ _core_world_scene__WEBPACK_IMPORTED_MODULE_38__.Scene),
+/* harmony export */   RayCastBehavior: () => (/* reexport safe */ _core_behaviors_rayCastBehavior__WEBPACK_IMPORTED_MODULE_56__.RayCastBehavior),
+/* harmony export */   RayCastBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_rayCastBehavior__WEBPACK_IMPORTED_MODULE_56__.RayCastBehaviorBuilder),
+/* harmony export */   RayCastBehaviorData: () => (/* reexport safe */ _core_behaviors_rayCastBehavior__WEBPACK_IMPORTED_MODULE_56__.RayCastBehaviorData),
+/* harmony export */   RigidBodyBehavior: () => (/* reexport safe */ _core_behaviors_rigidBodyBehavior__WEBPACK_IMPORTED_MODULE_55__.RigidBodyBehavior),
+/* harmony export */   RigidBodyBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_rigidBodyBehavior__WEBPACK_IMPORTED_MODULE_55__.RigidBodyBehaviorBuilder),
+/* harmony export */   RigidBodyBehaviorData: () => (/* reexport safe */ _core_behaviors_rigidBodyBehavior__WEBPACK_IMPORTED_MODULE_55__.RigidBodyBehaviorData),
+/* harmony export */   RotationBehavior: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_53__.RotationBehavior),
+/* harmony export */   RotationBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_53__.RotationBehaviorBuilder),
+/* harmony export */   RotationBehaviorData: () => (/* reexport safe */ _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_53__.RotationBehaviorData),
+/* harmony export */   SaveManager: () => (/* reexport safe */ _core_save_saveManager__WEBPACK_IMPORTED_MODULE_39__.SaveManager),
+/* harmony export */   Scene: () => (/* reexport safe */ _core_world_scene__WEBPACK_IMPORTED_MODULE_41__.Scene),
 /* harmony export */   Shader: () => (/* reexport safe */ _core_gl_shader__WEBPACK_IMPORTED_MODULE_11__.Shader),
-/* harmony export */   SimObject: () => (/* reexport safe */ _core_world_simObject__WEBPACK_IMPORTED_MODULE_37__.SimObject),
+/* harmony export */   SimObject: () => (/* reexport safe */ _core_world_simObject__WEBPACK_IMPORTED_MODULE_40__.SimObject),
 /* harmony export */   Sprite: () => (/* reexport safe */ _core_graphics_sprite__WEBPACK_IMPORTED_MODULE_17__.Sprite),
 /* harmony export */   SpriteBatcher: () => (/* reexport safe */ _core_graphics_spriteBatcher__WEBPACK_IMPORTED_MODULE_22__.SpriteBatcher),
-/* harmony export */   SpriteComponent: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_43__.SpriteComponent),
-/* harmony export */   SpriteComponentBuilder: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_43__.SpriteComponentBuilder),
-/* harmony export */   SpriteComponentData: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_43__.SpriteComponentData),
-/* harmony export */   StatefulAnimationBehavior: () => (/* reexport safe */ _core_behaviors_statefulAnimationBehavior__WEBPACK_IMPORTED_MODULE_50__.StatefulAnimationBehavior),
-/* harmony export */   StatefulAnimationBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_statefulAnimationBehavior__WEBPACK_IMPORTED_MODULE_50__.StatefulAnimationBehaviorBuilder),
-/* harmony export */   StatefulAnimationBehaviorData: () => (/* reexport safe */ _core_behaviors_statefulAnimationBehavior__WEBPACK_IMPORTED_MODULE_50__.StatefulAnimationBehaviorData),
+/* harmony export */   SpriteComponent: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_46__.SpriteComponent),
+/* harmony export */   SpriteComponentBuilder: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_46__.SpriteComponentBuilder),
+/* harmony export */   SpriteComponentData: () => (/* reexport safe */ _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_46__.SpriteComponentData),
+/* harmony export */   SpriteLayer: () => (/* reexport safe */ _core_graphics_spriteBatcher__WEBPACK_IMPORTED_MODULE_22__.SpriteLayer),
+/* harmony export */   StatefulAnimationBehavior: () => (/* reexport safe */ _core_behaviors_statefulAnimationBehavior__WEBPACK_IMPORTED_MODULE_54__.StatefulAnimationBehavior),
+/* harmony export */   StatefulAnimationBehaviorBuilder: () => (/* reexport safe */ _core_behaviors_statefulAnimationBehavior__WEBPACK_IMPORTED_MODULE_54__.StatefulAnimationBehaviorBuilder),
+/* harmony export */   StatefulAnimationBehaviorData: () => (/* reexport safe */ _core_behaviors_statefulAnimationBehavior__WEBPACK_IMPORTED_MODULE_54__.StatefulAnimationBehaviorData),
 /* harmony export */   Texture: () => (/* reexport safe */ _core_graphics_texture__WEBPACK_IMPORTED_MODULE_19__.Texture),
 /* harmony export */   TextureManager: () => (/* reexport safe */ _core_graphics_textureManager__WEBPACK_IMPORTED_MODULE_20__.TextureManager),
 /* harmony export */   TileMap: () => (/* reexport safe */ _core_graphics_tileMap__WEBPACK_IMPORTED_MODULE_26__.TileMap),
 /* harmony export */   TileSet: () => (/* reexport safe */ _core_graphics_tileMap__WEBPACK_IMPORTED_MODULE_26__.TileSet),
 /* harmony export */   UI: () => (/* reexport safe */ _core_ui_ui__WEBPACK_IMPORTED_MODULE_4__.UI),
 /* harmony export */   Vertex: () => (/* reexport safe */ _core_graphics_vertex__WEBPACK_IMPORTED_MODULE_16__.Vertex),
-/* harmony export */   Zone: () => (/* reexport safe */ _core_world_zone__WEBPACK_IMPORTED_MODULE_39__.Zone),
-/* harmony export */   ZoneManager: () => (/* reexport safe */ _core_world_zoneManager__WEBPACK_IMPORTED_MODULE_40__.ZoneManager),
-/* harmony export */   ZoneState: () => (/* reexport safe */ _core_world_zone__WEBPACK_IMPORTED_MODULE_39__.ZoneState),
+/* harmony export */   Zone: () => (/* reexport safe */ _core_world_zone__WEBPACK_IMPORTED_MODULE_42__.Zone),
+/* harmony export */   ZoneManager: () => (/* reexport safe */ _core_world_zoneManager__WEBPACK_IMPORTED_MODULE_43__.ZoneManager),
+/* harmony export */   ZoneState: () => (/* reexport safe */ _core_world_zone__WEBPACK_IMPORTED_MODULE_42__.ZoneState),
 /* harmony export */   gl: () => (/* reexport safe */ _core_gl_gl__WEBPACK_IMPORTED_MODULE_10__.gl),
 /* harmony export */   glAttrInfo: () => (/* reexport safe */ _core_gl_glBuffer__WEBPACK_IMPORTED_MODULE_13__.glAttrInfo),
 /* harmony export */   glBuffer: () => (/* reexport safe */ _core_gl_glBuffer__WEBPACK_IMPORTED_MODULE_13__.glBuffer),
@@ -5339,22 +6046,30 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _core_com_messageBus__WEBPACK_IMPORTED_MODULE_34__ = __webpack_require__(/*! ./core/com/messageBus */ "./BdvEngine/core/com/messageBus.ts");
 /* harmony import */ var _core_input_inputManager__WEBPACK_IMPORTED_MODULE_35__ = __webpack_require__(/*! ./core/input/inputManager */ "./BdvEngine/core/input/inputManager.ts");
 /* harmony import */ var _core_assets_assetManager__WEBPACK_IMPORTED_MODULE_36__ = __webpack_require__(/*! ./core/assets/assetManager */ "./BdvEngine/core/assets/assetManager.ts");
-/* harmony import */ var _core_world_simObject__WEBPACK_IMPORTED_MODULE_37__ = __webpack_require__(/*! ./core/world/simObject */ "./BdvEngine/core/world/simObject.ts");
-/* harmony import */ var _core_world_scene__WEBPACK_IMPORTED_MODULE_38__ = __webpack_require__(/*! ./core/world/scene */ "./BdvEngine/core/world/scene.ts");
-/* harmony import */ var _core_world_zone__WEBPACK_IMPORTED_MODULE_39__ = __webpack_require__(/*! ./core/world/zone */ "./BdvEngine/core/world/zone.ts");
-/* harmony import */ var _core_world_zoneManager__WEBPACK_IMPORTED_MODULE_40__ = __webpack_require__(/*! ./core/world/zoneManager */ "./BdvEngine/core/world/zoneManager.ts");
-/* harmony import */ var _core_components_baseComponent__WEBPACK_IMPORTED_MODULE_41__ = __webpack_require__(/*! ./core/components/baseComponent */ "./BdvEngine/core/components/baseComponent.ts");
-/* harmony import */ var _core_components_componentManager__WEBPACK_IMPORTED_MODULE_42__ = __webpack_require__(/*! ./core/components/componentManager */ "./BdvEngine/core/components/componentManager.ts");
-/* harmony import */ var _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_43__ = __webpack_require__(/*! ./core/components/spriteComponent */ "./BdvEngine/core/components/spriteComponent.ts");
-/* harmony import */ var _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_44__ = __webpack_require__(/*! ./core/components/animatedSpriteComponent */ "./BdvEngine/core/components/animatedSpriteComponent.ts");
-/* harmony import */ var _core_components_colliderComponent__WEBPACK_IMPORTED_MODULE_45__ = __webpack_require__(/*! ./core/components/colliderComponent */ "./BdvEngine/core/components/colliderComponent.ts");
-/* harmony import */ var _core_behaviors_baseBehavior__WEBPACK_IMPORTED_MODULE_46__ = __webpack_require__(/*! ./core/behaviors/baseBehavior */ "./BdvEngine/core/behaviors/baseBehavior.ts");
-/* harmony import */ var _core_behaviors_behaviorManager__WEBPACK_IMPORTED_MODULE_47__ = __webpack_require__(/*! ./core/behaviors/behaviorManager */ "./BdvEngine/core/behaviors/behaviorManager.ts");
-/* harmony import */ var _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_48__ = __webpack_require__(/*! ./core/behaviors/keyboardMovementBehavior */ "./BdvEngine/core/behaviors/keyboardMovementBehavior.ts");
-/* harmony import */ var _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_49__ = __webpack_require__(/*! ./core/behaviors/rotationBehavior */ "./BdvEngine/core/behaviors/rotationBehavior.ts");
-/* harmony import */ var _core_behaviors_statefulAnimationBehavior__WEBPACK_IMPORTED_MODULE_50__ = __webpack_require__(/*! ./core/behaviors/statefulAnimationBehavior */ "./BdvEngine/core/behaviors/statefulAnimationBehavior.ts");
-/* harmony import */ var _core_behaviors_rigidBodyBehavior__WEBPACK_IMPORTED_MODULE_51__ = __webpack_require__(/*! ./core/behaviors/rigidBodyBehavior */ "./BdvEngine/core/behaviors/rigidBodyBehavior.ts");
-/* harmony import */ var _core_behaviors_rayCastBehavior__WEBPACK_IMPORTED_MODULE_52__ = __webpack_require__(/*! ./core/behaviors/rayCastBehavior */ "./BdvEngine/core/behaviors/rayCastBehavior.ts");
+/* harmony import */ var _core_audio_audioManager__WEBPACK_IMPORTED_MODULE_37__ = __webpack_require__(/*! ./core/audio/audioManager */ "./BdvEngine/core/audio/audioManager.ts");
+/* harmony import */ var _core_audio_audioAssetLoader__WEBPACK_IMPORTED_MODULE_38__ = __webpack_require__(/*! ./core/audio/audioAssetLoader */ "./BdvEngine/core/audio/audioAssetLoader.ts");
+/* harmony import */ var _core_save_saveManager__WEBPACK_IMPORTED_MODULE_39__ = __webpack_require__(/*! ./core/save/saveManager */ "./BdvEngine/core/save/saveManager.ts");
+/* harmony import */ var _core_world_simObject__WEBPACK_IMPORTED_MODULE_40__ = __webpack_require__(/*! ./core/world/simObject */ "./BdvEngine/core/world/simObject.ts");
+/* harmony import */ var _core_world_scene__WEBPACK_IMPORTED_MODULE_41__ = __webpack_require__(/*! ./core/world/scene */ "./BdvEngine/core/world/scene.ts");
+/* harmony import */ var _core_world_zone__WEBPACK_IMPORTED_MODULE_42__ = __webpack_require__(/*! ./core/world/zone */ "./BdvEngine/core/world/zone.ts");
+/* harmony import */ var _core_world_zoneManager__WEBPACK_IMPORTED_MODULE_43__ = __webpack_require__(/*! ./core/world/zoneManager */ "./BdvEngine/core/world/zoneManager.ts");
+/* harmony import */ var _core_components_baseComponent__WEBPACK_IMPORTED_MODULE_44__ = __webpack_require__(/*! ./core/components/baseComponent */ "./BdvEngine/core/components/baseComponent.ts");
+/* harmony import */ var _core_components_componentManager__WEBPACK_IMPORTED_MODULE_45__ = __webpack_require__(/*! ./core/components/componentManager */ "./BdvEngine/core/components/componentManager.ts");
+/* harmony import */ var _core_components_spriteComponent__WEBPACK_IMPORTED_MODULE_46__ = __webpack_require__(/*! ./core/components/spriteComponent */ "./BdvEngine/core/components/spriteComponent.ts");
+/* harmony import */ var _core_components_animatedSpriteComponent__WEBPACK_IMPORTED_MODULE_47__ = __webpack_require__(/*! ./core/components/animatedSpriteComponent */ "./BdvEngine/core/components/animatedSpriteComponent.ts");
+/* harmony import */ var _core_components_colliderComponent__WEBPACK_IMPORTED_MODULE_48__ = __webpack_require__(/*! ./core/components/colliderComponent */ "./BdvEngine/core/components/colliderComponent.ts");
+/* harmony import */ var _core_components_audioComponent__WEBPACK_IMPORTED_MODULE_49__ = __webpack_require__(/*! ./core/components/audioComponent */ "./BdvEngine/core/components/audioComponent.ts");
+/* harmony import */ var _core_behaviors_baseBehavior__WEBPACK_IMPORTED_MODULE_50__ = __webpack_require__(/*! ./core/behaviors/baseBehavior */ "./BdvEngine/core/behaviors/baseBehavior.ts");
+/* harmony import */ var _core_behaviors_behaviorManager__WEBPACK_IMPORTED_MODULE_51__ = __webpack_require__(/*! ./core/behaviors/behaviorManager */ "./BdvEngine/core/behaviors/behaviorManager.ts");
+/* harmony import */ var _core_behaviors_keyboardMovementBehavior__WEBPACK_IMPORTED_MODULE_52__ = __webpack_require__(/*! ./core/behaviors/keyboardMovementBehavior */ "./BdvEngine/core/behaviors/keyboardMovementBehavior.ts");
+/* harmony import */ var _core_behaviors_rotationBehavior__WEBPACK_IMPORTED_MODULE_53__ = __webpack_require__(/*! ./core/behaviors/rotationBehavior */ "./BdvEngine/core/behaviors/rotationBehavior.ts");
+/* harmony import */ var _core_behaviors_statefulAnimationBehavior__WEBPACK_IMPORTED_MODULE_54__ = __webpack_require__(/*! ./core/behaviors/statefulAnimationBehavior */ "./BdvEngine/core/behaviors/statefulAnimationBehavior.ts");
+/* harmony import */ var _core_behaviors_rigidBodyBehavior__WEBPACK_IMPORTED_MODULE_55__ = __webpack_require__(/*! ./core/behaviors/rigidBodyBehavior */ "./BdvEngine/core/behaviors/rigidBodyBehavior.ts");
+/* harmony import */ var _core_behaviors_rayCastBehavior__WEBPACK_IMPORTED_MODULE_56__ = __webpack_require__(/*! ./core/behaviors/rayCastBehavior */ "./BdvEngine/core/behaviors/rayCastBehavior.ts");
+
+
+
+
 
 
 

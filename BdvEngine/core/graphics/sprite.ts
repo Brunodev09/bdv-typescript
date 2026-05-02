@@ -6,12 +6,13 @@ import { Material } from './material';
 import { MaterialManager } from './materialManager';
 import { m4x4 } from '../utils/m4x4';
 import { Draw } from './draw';
-import { SpriteBatcher } from './spriteBatcher';
+import { SpriteBatcher, SpriteLayer } from './spriteBatcher';
 
 export class Sprite {
   protected name: string;
   protected width: number;
   protected height: number;
+  public layer: SpriteLayer = SpriteLayer.Ground;
 
   protected buffer!: glBuffer;
 
@@ -81,7 +82,10 @@ export class Sprite {
 
   /** Queue this sprite for batched rendering. */
   public pushToBatch(worldMatrix: m4x4): void {
-    SpriteBatcher.push(this.vertices, this.material, worldMatrix);
+    // For Object layer, use sprite bottom in world Y as the sort key.
+    let m = worldMatrix.mData;
+    let sortY = this.layer === SpriteLayer.Object ? m[13] + this.height * m[5] : 0;
+    SpriteBatcher.push(this.vertices, this.material, worldMatrix, this.layer, sortY);
   }
 
   public update(tick: number): void {}

@@ -1,14 +1,9 @@
-import { gl } from '../gl/gl';
+import { gl, GLExt } from '../gl/gl';
 import { Shader } from '../gl/shader';
-import { Texture } from './texture';
-import { TextureManager } from './textureManager';
 import { Color } from './color';
 import { Draw } from './draw';
-import { SpriteBatcher } from './spriteBatcher';
-import { Vertex } from './vertex';
 import { Material } from './material';
 import { MaterialManager } from './materialManager';
-import { m4x4 } from '../utils/m4x4';
 import { Camera2D } from '../camera2d';
 
 export interface TileSetConfig {
@@ -75,6 +70,8 @@ export class TileSet {
 
   public get tileCount(): number { return this.uvs.length; }
   public get isReady(): boolean { return this.ready; }
+  public get colCount(): number { return this.cols; }
+  public get rowCount(): number { return this.rows; }
 
   public getUV(tileIndex: number): TileUV | null {
     if (tileIndex < 0 || tileIndex >= this.uvs.length) return null;
@@ -82,20 +79,36 @@ export class TileSet {
   }
 }
 
+/**
+ * Chunked tilemap renderer.
+ *
+ * The map is divided into CHUNK_SIZE × CHUNK_SIZE chunks; each owns a static
+ * VBO + EBO baked once on first render and re-baked only when a tile in that
+ * chunk changes. Per-frame work is just AABB-cull → bind buffers → drawElements.
+ *
+ * Renders directly (does NOT go through SpriteBatcher). Call this BEFORE
+ * SpriteBatcher.flush() so terrain ends up below the sprite layers.
+ */
 export class TileMap {
+  public static readonly CHUNK_SIZE = 64;
+
   public tileSet: TileSet;
+  public lodTileSet: TileSet | null = null;
+  public lodThreshold: number = 6;
+  public heightScale: number = 6;
+  public shadowStrength: number = 0.45;
+  public importantTiles: Set<number> = new Set();
 
   private mapWidth: number;
   private mapHeight: number;
+  private renderTileSize: number;
   private tiles: Int16Array;
   private heights: Float32Array;
-  private renderTileSize: number;
 
-  public heightScale: number = 6;
-  public shadowStrength: number = 0.45;
-  public lodTileSet: TileSet | null = null;
-  public lodThreshold: number = 6;
-  public importantTiles: Set<number> = new Set();
+  private chunks: TileChunk[];
+  private lodChunks: TileChunk[] | null = null;
+  private chunksX: number;
+  private chunksY: number;
 
   constructor(tileSet: TileSet, mapWidth: number, mapHeight: number, renderTileSize: number = 16) {
     this.tileSet = tileSet;
@@ -105,11 +118,25 @@ export class TileMap {
     this.tiles = new Int16Array(mapWidth * mapHeight);
     this.tiles.fill(-1);
     this.heights = new Float32Array(mapWidth * mapHeight);
+
+    this.chunksX = Math.ceil(mapWidth / TileMap.CHUNK_SIZE);
+    this.chunksY = Math.ceil(mapHeight / TileMap.CHUNK_SIZE);
+    this.chunks = new Array(this.chunksX * this.chunksY);
+    for (let cy = 0; cy < this.chunksY; cy++) {
+      for (let cx = 0; cx < this.chunksX; cx++) {
+        this.chunks[cy * this.chunksX + cx] = new TileChunk(cx, cy);
+      }
+    }
   }
 
   public setTile(x: number, y: number, tileIndex: number): void {
     if (x < 0 || x >= this.mapWidth || y < 0 || y >= this.mapHeight) return;
     this.tiles[y * this.mapWidth + x] = tileIndex;
+    let cx = Math.floor(x / TileMap.CHUNK_SIZE);
+    let cy = Math.floor(y / TileMap.CHUNK_SIZE);
+    let i = cy * this.chunksX + cx;
+    this.chunks[i].markDirty();
+    if (this.lodChunks) this.lodChunks[i].markDirty();
   }
 
   public getTile(x: number, y: number): number {
@@ -127,116 +154,213 @@ export class TileMap {
     return this.heights[y * this.mapWidth + x];
   }
 
-  public fill(tileIndex: number): void { this.tiles.fill(tileIndex); }
+  public fill(tileIndex: number): void {
+    this.tiles.fill(tileIndex);
+    for (let c of this.chunks) c.markDirty();
+    if (this.lodChunks) for (let c of this.lodChunks) c.markDirty();
+  }
 
   public get width(): number { return this.mapWidth; }
   public get height(): number { return this.mapHeight; }
   public get tileSize(): number { return this.renderTileSize; }
 
   /**
-   * Render visible tiles in WORLD SPACE.
-   * Tile positions are in world pixels: tile (x,y) renders at
-   * (x * tileSize, y * tileSize). The engine's camera projection
-   * handles the world-to-screen transform.
+   * Render visible chunks in WORLD SPACE.
+   * Tile positions: tile (x,y) renders at (x * tileSize, y * tileSize).
    */
   public render(camera: Camera2D, screenW: number, screenH: number): void {
     if (!this.tileSet.computeUVs()) return;
 
     let ts = this.renderTileSize;
     let zoom = camera.zoom;
-    let screenTs = ts * zoom; // tile size on screen for LOD decisions
+    let screenTs = ts * zoom;
 
-    // Pick tileset: use LOD version when zoomed out
-    let useLod = this.lodTileSet && screenTs < this.lodThreshold;
-    let activeTileSet = useLod ? this.lodTileSet! : this.tileSet;
-    if (useLod && !activeTileSet.computeUVs()) {
-      activeTileSet = this.tileSet;
+    let activeSet = this.tileSet;
+    let activeChunks = this.chunks;
+    if (this.lodTileSet && screenTs < this.lodThreshold && this.lodTileSet.computeUVs()) {
+      activeSet = this.lodTileSet;
+      if (!this.lodChunks) this.lodChunks = this.buildChunkArray();
+      activeChunks = this.lodChunks;
     }
 
-    // LOD step based on screen size of tiles
-    let step = 1;
-    if (screenTs < 4)      step = 8;
-    else if (screenTs < 6)  step = 4;
-    else if (screenTs < 10) step = 2;
-
-    // Compute visible tile range from camera
     let halfW = screenW / 2 / zoom;
     let halfH = screenH / 2 / zoom;
-    let camTX = camera.x / ts;
-    let camTY = camera.y / ts;
+    let minX = camera.x - halfW, minY = camera.y - halfH;
+    let maxX = camera.x + halfW, maxY = camera.y + halfH;
 
-    let margin = 2;
-    let startX = Math.max(0, Math.floor(camTX - halfW / ts) - 1);
-    let startY = Math.max(0, Math.floor(camTY - halfH / ts) - margin);
-    let endX = Math.min(this.mapWidth, Math.ceil(camTX + halfW / ts) + 1);
-    let endY = Math.min(this.mapHeight, Math.ceil(camTY + halfH / ts) + 2);
+    let chunkPx = TileMap.CHUNK_SIZE * ts;
+    let cMinX = Math.max(0, Math.floor(minX / chunkPx));
+    let cMinY = Math.max(0, Math.floor(minY / chunkPx));
+    let cMaxX = Math.min(this.chunksX, Math.ceil(maxX / chunkPx));
+    let cMaxY = Math.min(this.chunksY, Math.ceil(maxY / chunkPx));
 
-    // Snap to step grid
-    startX = Math.floor(startX / step) * step;
-    startY = Math.floor(startY / step) * step;
+    let shader = TileChunk.getShader();
+    shader.use();
+    gl.uniformMatrix4fv(shader.getUniformLocation("u_proj"), false, new Float32Array(Draw.getProjection().mData));
+    let texture = activeSet.material.diffTexture!;
+    texture.activate(0);
+    gl.uniform1i(shader.getUniformLocation("u_diffuse"), 0);
 
-    let mat = activeTileSet.material;
-    let baseR = mat.diffColor.rFloat;
-    let baseG = mat.diffColor.gFloat;
-    let baseB = mat.diffColor.bFloat;
-    let baseA = mat.diffColor.aFloat;
-
-    let texture = mat.diffTexture;
-    if (!texture) return;
-
-    let key = "__default_batch__:" + mat.diffTextureName;
-    let batches = (SpriteBatcher as any).batches as Map<string, any>;
-    if (!batches) {
-      (SpriteBatcher as any).ensureInit();
-      batches = (SpriteBatcher as any).batches;
-    }
-
-    let batchEntry = batches.get(key);
-    if (!batchEntry) {
-      batchEntry = { verts: [] as number[], texture: texture, material: null };
-      batches.set(key, batchEntry);
-    }
-    let buf: number[] = batchEntry.verts;
-
-    let hasImportant = this.importantTiles.size > 0 && step > 1;
-    let showImportant = hasImportant && step <= 2;
-    let iterStep = showImportant ? 1 : step;
-
-    for (let y = startY; y < endY; y += iterStep) {
-      for (let x = startX; x < endX; x += iterStep) {
-        let tileIdx = this.tiles[y * this.mapWidth + x];
-        if (tileIdx < 0) continue;
-
-        let onGrid = (x % step === 0) && (y % step === 0);
-        let isImportantTile = this.importantTiles.has(tileIdx);
-
-        if (isImportantTile) {
-          if (!showImportant) continue;
-        } else {
-          if (!onGrid) continue;
+    for (let cy = cMinY; cy < cMaxY; cy++) {
+      for (let cx = cMinX; cx < cMaxX; cx++) {
+        let chunk = activeChunks[cy * this.chunksX + cx];
+        if (chunk.dirty) {
+          chunk.bake(this.tiles, this.mapWidth, this.mapHeight, ts, activeSet);
         }
-
-        let uv = activeTileSet.getUV(tileIdx);
-        if (!uv) continue;
-
-        let r = baseR, g = baseG, b = baseB;
-        let tileStep = (onGrid && !isImportantTile) ? step : 1;
-
-        let wx = x * ts;
-        let wy = y * ts;
-        let wx2 = (x + tileStep) * ts;
-        let wy2 = (y + tileStep) * ts;
-
-        buf.push(
-          wx,  wy,  0, uv.u0, uv.v0, r, g, b, baseA,
-          wx,  wy2, 0, uv.u0, uv.v1, r, g, b, baseA,
-          wx2, wy2, 0, uv.u1, uv.v1, r, g, b, baseA,
-          wx2, wy2, 0, uv.u1, uv.v1, r, g, b, baseA,
-          wx2, wy,  0, uv.u1, uv.v0, r, g, b, baseA,
-          wx,  wy,  0, uv.u0, uv.v0, r, g, b, baseA,
-        );
-
+        chunk.draw(shader);
       }
     }
+  }
+
+  private buildChunkArray(): TileChunk[] {
+    let arr = new Array<TileChunk>(this.chunksX * this.chunksY);
+    for (let cy = 0; cy < this.chunksY; cy++) {
+      for (let cx = 0; cx < this.chunksX; cx++) {
+        arr[cy * this.chunksX + cx] = new TileChunk(cx, cy);
+      }
+    }
+    return arr;
+  }
+
+  public dispose(): void {
+    for (let c of this.chunks) c.dispose();
+    if (this.lodChunks) for (let c of this.lodChunks) c.dispose();
+  }
+}
+
+class TileChunk {
+  private chunkX: number;
+  private chunkY: number;
+  private vbo: WebGLBuffer | null = null;
+  private ebo: WebGLBuffer | null = null;
+  private indexCount: number = 0;
+  private initialized: boolean = false;
+  public dirty: boolean = true;
+
+  private static shader: TileChunkShader | null = null;
+  public static getShader(): Shader {
+    if (!TileChunk.shader) TileChunk.shader = new TileChunkShader();
+    return TileChunk.shader;
+  }
+
+  constructor(cx: number, cy: number) {
+    this.chunkX = cx;
+    this.chunkY = cy;
+  }
+
+  public markDirty(): void { this.dirty = true; }
+
+  public bake(tiles: Int16Array, mapW: number, mapH: number, tileSize: number, set: TileSet): void {
+    if (!this.initialized) {
+      this.vbo = gl.createBuffer();
+      this.ebo = gl.createBuffer();
+      this.initialized = true;
+    }
+
+    let baseX = this.chunkX * TileMap.CHUNK_SIZE;
+    let baseY = this.chunkY * TileMap.CHUNK_SIZE;
+    let endX = Math.min(baseX + TileMap.CHUNK_SIZE, mapW);
+    let endY = Math.min(baseY + TileMap.CHUNK_SIZE, mapH);
+
+    let verts: number[] = [];
+    let indices: number[] = [];
+    let quad = 0;
+    const r = 1, g = 1, b = 1, a = 1;
+
+    for (let y = baseY; y < endY; y++) {
+      for (let x = baseX; x < endX; x++) {
+        let tileIdx = tiles[y * mapW + x];
+        if (tileIdx < 0) continue;
+        let uv = set.getUV(tileIdx);
+        if (!uv) continue;
+        let x1 = x * tileSize, y1 = y * tileSize;
+        let x2 = x1 + tileSize, y2 = y1 + tileSize;
+
+        verts.push(
+          x1, y1, 0, uv.u0, uv.v0, r, g, b, a,
+          x1, y2, 0, uv.u0, uv.v1, r, g, b, a,
+          x2, y2, 0, uv.u1, uv.v1, r, g, b, a,
+          x2, y1, 0, uv.u1, uv.v0, r, g, b, a,
+        );
+        let v0i = quad * 4;
+        indices.push(v0i + 0, v0i + 1, v0i + 2, v0i + 2, v0i + 3, v0i + 0);
+        quad++;
+      }
+    }
+
+    this.indexCount = indices.length;
+    if (verts.length > 0) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ebo);
+      // Indices fit in uint16 (max 4*4096 = 16384 < 65536) at CHUNK_SIZE=64.
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+    }
+    this.dirty = false;
+  }
+
+  public draw(shader: Shader): void {
+    if (this.indexCount === 0 || !this.initialized) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
+    const stride = 9 * 4;
+
+    let posLoc = shader.getAttribLocation("a_pos");
+    gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, stride, 0);
+    gl.enableVertexAttribArray(posLoc);
+
+    let texLoc = shader.getAttribLocation("a_textCoord");
+    gl.vertexAttribPointer(texLoc, 2, gl.FLOAT, false, stride, 3 * 4);
+    gl.enableVertexAttribArray(texLoc);
+
+    let colLoc = shader.getAttribLocation("a_color");
+    gl.vertexAttribPointer(colLoc, 4, gl.FLOAT, false, stride, 5 * 4);
+    gl.enableVertexAttribArray(colLoc);
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.ebo);
+    gl.drawElements(gl.TRIANGLES, this.indexCount, gl.UNSIGNED_SHORT, 0);
+
+    gl.disableVertexAttribArray(posLoc);
+    gl.disableVertexAttribArray(texLoc);
+    gl.disableVertexAttribArray(colLoc);
+  }
+
+  public dispose(): void {
+    if (!this.initialized) return;
+    if (this.vbo) gl.deleteBuffer(this.vbo);
+    if (this.ebo) gl.deleteBuffer(this.ebo);
+    this.vbo = null;
+    this.ebo = null;
+    this.initialized = false;
+  }
+}
+
+class TileChunkShader extends Shader {
+  constructor() {
+    super("tile_chunk");
+    this.load(this.vertSrc(), this.fragSrc());
+  }
+  private vertSrc(): string {
+    return `
+      attribute vec3 a_pos;
+      attribute vec2 a_textCoord;
+      attribute vec4 a_color;
+      uniform mat4 u_proj;
+      varying vec2 v_textCoord;
+      varying vec4 v_color;
+      void main() {
+        gl_Position = u_proj * vec4(a_pos, 1.0);
+        v_textCoord = a_textCoord;
+        v_color = a_color;
+      }`;
+  }
+  private fragSrc(): string {
+    return `
+      precision mediump float;
+      uniform sampler2D u_diffuse;
+      varying vec2 v_textCoord;
+      varying vec4 v_color;
+      void main() {
+        gl_FragColor = v_color * texture2D(u_diffuse, v_textCoord);
+      }`;
   }
 }

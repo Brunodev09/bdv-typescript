@@ -1,5 +1,5 @@
 import { Material } from './material';
-import { SpriteBatcher } from './spriteBatcher';
+import { SpriteBatcher, SpriteLayer } from './spriteBatcher';
 import { Color } from './color';
 
 /**
@@ -131,8 +131,19 @@ export class AnimatedEntity {
   /**
    * Render the current frame at a screen position.
    * Uses SpriteBatcher.drawTexture — batched with other sprites sharing the same texture.
+   *
+   * For object-style sprites (units, multi-tile buildings drawn alpha-blended)
+   * pass `layer = SpriteLayer.Object` and a `sortY` (typically y + height) for
+   * RimWorld-style feet-on-ground depth sorting.
    */
-  render(material: Material, x: number, y: number, width: number, height: number, tint?: Color): void {
+  render(
+    material: Material,
+    x: number, y: number,
+    width: number, height: number,
+    tint?: Color,
+    layer: SpriteLayer = SpriteLayer.Ground,
+    sortY: number = 0,
+  ): void {
     let state = this.states.get(this.currentState);
     if (!state) return;
 
@@ -144,6 +155,8 @@ export class AnimatedEntity {
       this.gridRows,
       x, y, width, height,
       tint,
+      layer,
+      sortY,
     );
   }
 }
